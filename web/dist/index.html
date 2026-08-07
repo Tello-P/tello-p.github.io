@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embedded Qubit Engine — Trace Debugger</title>
+<link rel="stylesheet" href="./style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand__mark" aria-hidden="true">◈</span>
+    <span class="brand__text">
+      <strong>Embedded Qubit Engine</strong>
+      <span class="brand__sub">Q1.14 fixed-point · live trace debugger</span>
+    </span>
+    <span id="engine-badge" class="badge" title="Which build of the C core is running">detecting…</span>
+  </div>
+
+  <div class="topbar__controls">
+    <label class="field">
+      <span>Qubits</span>
+      <select id="qubits">
+        <option>1</option><option selected>2</option>
+        <option>3</option><option>4</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>Trace</span>
+      <select id="mode" title="step = every inner-loop iteration; gate = gate boundaries only">
+        <option value="step" selected>Per step</option>
+        <option value="gate">Per gate</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>RNG seed</span>
+      <input id="seed" type="text" inputmode="numeric" placeholder="default" size="8">
+    </label>
+
+    <button id="run" class="btn btn--primary">
+      <span class="btn__glyph" aria-hidden="true">▸</span> Compile &amp; run
+    </button>
+
+    <button id="theme" class="btn btn--icon" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ── circuit ─────────────────────────────────────────────── -->
+  <section class="panel panel--circuit" aria-labelledby="h-circuit">
+    <div class="panel__head">
+      <h2 id="h-circuit">Circuit</h2>
+      <div class="panel__actions">
+        <select id="preset" class="mini" aria-label="Load preset circuit">
+          <option value="">Presets…</option>
+          <option value="bell">Bell state (H · CNOT · measure)</option>
+          <option value="ghz">GHZ state (3 qubits)</option>
+          <option value="grover">Grover search |11⟩</option>
+          <option value="grover3">Grover 3-qubit (oracle only)</option>
+          <option value="teleport">Teleport skeleton</option>
+          <option value="interfere">H · Z · H (interference)</option>
+        </select>
+        <button id="clear" class="mini" type="button">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel__body">
+      <div class="palette" id="palette">
+        <div class="palette__row">
+          <button class="gate-btn" data-op="h"    title="Hadamard — creates superposition">H</button>
+          <button class="gate-btn" data-op="x"    title="Pauli-X — bit flip">X</button>
+          <button class="gate-btn" data-op="z"    title="Pauli-Z — phase flip">Z</button>
+          <button class="gate-btn" data-op="cnot" title="Controlled-NOT — entangles">C⊕</button>
+        </div>
+        <div class="palette__row">
+          <button class="gate-btn gate-btn--wide" data-op="oracle"   title="apply_oracle — negate one basis amplitude">Oracle</button>
+          <button class="gate-btn gate-btn--wide" data-op="diffuser" title="apply_diffuser — amplitude amplification">Diffuser</button>
+          <button class="gate-btn gate-btn--wide" data-op="measure"  title="measure_qubit — collapse">Measure</button>
+        </div>
+        <div class="palette__args">
+          <label class="field field--tight">
+            <span id="lbl-a">Target</span>
+            <select id="arg-a"></select>
+          </label>
+          <label class="field field--tight" id="wrap-b">
+            <span>Target</span>
+            <select id="arg-b"></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="circuit-scroll">
+        <svg id="circuit" class="circuit" role="img" aria-label="Quantum circuit diagram"></svg>
+      </div>
+      <p class="hint" id="circuit-hint">Pick a gate above to append it. Click a placed gate to remove it.</p>
+    </div>
+  </section>
+
+  <!-- ── state vector ────────────────────────────────────────── -->
+  <section class="panel panel--state" aria-labelledby="h-state">
+    <div class="panel__head">
+      <h2 id="h-state">State vector</h2>
+      <div class="legend" id="legend">
+        <span class="legend__item"><i class="swatch swatch--pos"></i>amplitude +</span>
+        <span class="legend__item"><i class="swatch swatch--neg"></i>amplitude −</span>
+        <span class="legend__item"><i class="swatch swatch--active"></i>touched this step</span>
+      </div>
+    </div>
+    <div class="panel__body">
+      <div id="amps" class="amps"></div>
+      <div class="statrow" id="statrow"></div>
+    </div>
+  </section>
+
+  <!-- ── source ──────────────────────────────────────────────── -->
+  <section class="panel panel--code" aria-labelledby="h-code">
+    <div class="panel__head">
+      <h2 id="h-code">Executing source</h2>
+      <select id="srcfile" class="mini" aria-label="Source file"></select>
+    </div>
+    <div class="panel__body panel__body--flush">
+      <div id="code" class="code" tabindex="0"></div>
+    </div>
+  </section>
+
+  <!-- ── bloch ───────────────────────────────────────────────── -->
+  <section class="panel panel--bloch" aria-labelledby="h-bloch">
+    <div class="panel__head">
+      <h2 id="h-bloch">Bloch spheres <span class="panel__note">reduced state per qubit</span></h2>
+      <div class="legend">
+        <span class="legend__item"><i class="swatch swatch--pos"></i>state vector</span>
+        <span class="legend__item">‖r‖ &lt; 1 ⇒ entangled / mixed</span>
+      </div>
+    </div>
+    <div class="panel__body">
+      <div id="bloch" class="bloch"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── transport ─────────────────────────────────────────────── -->
+<footer class="transport">
+  <div class="transport__buttons">
+    <button id="tp-first" class="btn btn--icon" title="First event"    aria-label="First event">⏮</button>
+    <button id="tp-prev"  class="btn btn--icon" title="Step back"      aria-label="Step back">◀</button>
+    <button id="tp-play"  class="btn btn--icon btn--play" title="Play / pause" aria-label="Play or pause">▶</button>
+    <button id="tp-next"  class="btn btn--icon" title="Step forward"   aria-label="Step forward">▶|</button>
+    <button id="tp-last"  class="btn btn--icon" title="Last event"     aria-label="Last event">⏭</button>
+  </div>
+
+  <input id="scrub" class="scrub" type="range" min="0" max="0" value="0" aria-label="Trace position">
+
+  <div class="transport__meta">
+    <label class="field field--tight">
+      <span>Speed</span>
+      <select id="speed">
+        <option value="500">0.5×</option>
+        <option value="200">1×</option>
+        <option value="80" selected>3×</option>
+        <option value="25">12×</option>
+        <option value="0">max</option>
+      </select>
+    </label>
+    <span class="counter" id="counter">no trace</span>
+  </div>
+
+  <div class="statusline" id="status">Ready — press <kbd>Compile &amp; run</kbd></div>
+</footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

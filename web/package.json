@@ -1,0 +1,14 @@
+{
+  "name": "embedded-qubit-engine-debugger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Visual trace debugger for the Embedded Qubit Engine Q1.14 quantum core",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
