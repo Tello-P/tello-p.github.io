@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Página Básica</title>
+    <style>
+        /* Estilos generales / Reseteo básico */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Encabezado */
+        header {
+            background-color: #1e1e24;
+            color: #ffffff;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        /* Contenedor principal */
+        main {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            flex: 1;
+        }
+
+        /* Tarjeta de contenido */
+        .card {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #2b2d42;
+            margin-bottom: 1rem;
+        }
+
+        .card p {
+            margin-bottom: 1.5rem;
+        }
+
+        /* Botón de acción */
+        .btn {
+            display: inline-block;
+            background-color: #2563eb;
+            color: #ffffff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* Pie de página */
+        footer {
+            background-color: #e2e8f0;
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Mi Sitio Web</h1>
+    </header>
+
+    <main>
+        <section class="card">
+            <h2>¡Hola, mundo!</h2>
+            <p>Este es un ejemplo de estructura HTML5 básica estilizada con CSS sin dependencias externas.</p>
+            <a href="#" class="btn">Acción</a>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Mi Sitio Web. Todos los derechos reservados.</p>
+    </footer>
+
+</body>
+</html>
