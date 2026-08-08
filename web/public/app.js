@@ -138,11 +138,13 @@ function selectOp(name, { announce = true } = {}) {
 }
 
 /* Arguments for a placement. `wire` is the qubit a drop landed on: it wins over
- * the selector, because pointing at the line you want is the whole idea. */
-function argsFor(name, wire = null) {
+ * the selector, because pointing at the line you want is the whole idea.
+ * `base` is the op being moved — moving a gate keeps its own control, it does
+ * not adopt whatever the palette selector happens to hold. */
+function argsFor(name, wire = null, base = null) {
   const spec = OPS[name];
-  let a = spec.args.length >= 1 ? Number(el.argA.value) : -1;
-  let b = spec.args.length >= 2 ? Number(el.argB.value) : -1;
+  let a = base ? base.a : spec.args.length >= 1 ? Number(el.argA.value) : -1;
+  let b = base ? base.b : spec.args.length >= 2 ? Number(el.argB.value) : -1;
 
   if (wire === null || spec.span) return { a, b };   // oracle/diffuser span every wire
 
@@ -184,7 +186,7 @@ function syncArgSelectors(name, a, b) {
 function moveOp(from, toColumn, wire) {
   const op = model.ops[from];
   if (!op) return;
-  const { a, b } = argsFor(op.name, wire);
+  const { a, b } = argsFor(op.name, wire, op);
   if (op.name === 'cnot' && a === b) return;
 
   model.ops.splice(from, 1);
@@ -270,12 +272,19 @@ function drawCircuit() {
       }
     } else if (op.name === 'cnot') {
       const yc = yOf(op.a), yt = yOf(op.b);
+      const line = svg('line', { class: 'ctrl-line', x1: x, y1: yc, x2: x, y2: yt });
+      const dot = svg('circle', { class: 'ctrl-dot', cx: x, cy: yc, r: 4 });
+      // generous invisible hit area — a 4px dot is not a drag handle
+      const hit = svg('circle', { class: 'ctrl-hit', cx: x, cy: yc, r: 10 });
+      hit.append(svg('title', {}, 'drag me to move the control to another wire'));
+      hit.addEventListener('pointerdown', (e) => beginControlDrag(e, k, { dot, line, hit }));
+
       g.append(
-        svg('line', { class: 'ctrl-line', x1: x, y1: yc, x2: x, y2: yt }),
-        svg('circle', { class: 'ctrl-dot', cx: x, cy: yc, r: 4 }),
+        line, dot,
         svg('rect', { class: 'gate-box', x: x - w / 2, y: yt - 13, width: w, height: 26, rx: 5 }),
         svg('text', { class: 'gate-label', x, y: yt + 4 }, '⊕'),
         svg('title', {}, `apply_gate_cnot(reg, ${op.a}, ${op.b})`),
+        hit,
       );
     } else {
       const y = yOf(op.a);
@@ -842,6 +851,15 @@ function showDropHint(k, wire, spanned) {
   el.circuit.appendChild(m);   // keep both above the gates
 }
 
+/* row only — used while dragging a CNOT control, where the column is fixed */
+function showRowHint(wire) {
+  const row = el.circuit._rowHi;
+  if (!row) return;
+  row.setAttribute('y', el.circuit._padT + wire * el.circuit._rowH);
+  row.setAttribute('opacity', 1);
+  el.circuit.appendChild(row);
+}
+
 function hideDropHint() {
   dropIndex = null;
   dropWire = null;
@@ -895,6 +913,55 @@ function onGateDragMove(e) {
   gateDrag.moved = true;
   const op = model.ops[gateDrag.index];
   showDropHint(columnAt(e.clientX, e.clientY), wireAt(e.clientX, e.clientY), OPS[op.name].span);
+}
+
+/* ── the CNOT control link ──────────────────────────────────────
+ * The control dot is its own handle: dragging it re-points the link at another
+ * wire without touching the target or the column. */
+
+let ctrlDrag = null;
+
+function beginControlDrag(e, index, parts) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();          // must not start a whole-gate drag
+  ctrlDrag = { index, ...parts, wire: model.ops[index].a };
+  parts.dot.classList.add('is-dragging');
+  window.addEventListener('pointermove', onControlDragMove);
+  window.addEventListener('pointerup', onControlDragEnd);
+  window.addEventListener('pointercancel', onControlDragEnd);
+  setStatus('Drag the control onto another wire, then release.');
+}
+
+function onControlDragMove(e) {
+  if (!ctrlDrag) return;
+  const op = model.ops[ctrlDrag.index];
+  const wire = wireAt(e.clientX, e.clientY);
+  if (wire === op.b) return;    // the control cannot sit on its own target
+  ctrlDrag.wire = wire;
+
+  const y = el.circuit._yOf(wire);
+  ctrlDrag.dot.setAttribute('cy', y);
+  ctrlDrag.hit.setAttribute('cy', y);
+  ctrlDrag.line.setAttribute('y1', y);
+  showRowHint(wire);
+}
+
+function onControlDragEnd() {
+  if (!ctrlDrag) return;
+  const { index, wire, dot } = ctrlDrag;
+  dot.classList.remove('is-dragging');
+  window.removeEventListener('pointermove', onControlDragMove);
+  window.removeEventListener('pointerup', onControlDragEnd);
+  window.removeEventListener('pointercancel', onControlDragEnd);
+  ctrlDrag = null;
+  hideDropHint();
+
+  const op = model.ops[index];
+  if (!op || wire === op.a || wire === op.b) { drawCircuit(); return; }
+  op.a = wire;
+  drawCircuit();
+  setStatus(`CNOT control moved to q${wire} — controls q${op.a}, targets q${op.b}. Press Compile & run.`);
 }
 
 function onGateDragEnd(e) {

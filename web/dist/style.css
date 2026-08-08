@@ -368,6 +368,12 @@ kbd {
 .gate-g { cursor: grab; }
 .gate-g.is-dragging { opacity: 0.35; cursor: grabbing; }
 
+/* the CNOT control dot is a handle of its own: drag it to re-point the link */
+.ctrl-hit { fill: transparent; cursor: ns-resize; }
+.gate-g:hover .ctrl-dot { r: 5.5; }
+.ctrl-dot { transition: r 0.12s ease; }
+.ctrl-dot.is-dragging { r: 6; }
+
 .circuit {
   user-select: none;
   -webkit-user-select: none;
