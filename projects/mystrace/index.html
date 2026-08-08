@@ -31,7 +31,7 @@
       every request, reads the CPU registers directly and transcribes what was asked and what
       came back.</p>
     <div class="byline">
-      <span>C11, no external dependencies</span>
+      <span>169 lines of C11, no dependencies</span>
       <span>ptrace(2) · System V AMD64 ABI</span>
       <span><a href="https://github.com/Tello-P/strace-in-c">github.com/Tello-P/strace-in-c</a></span>
     </div>
@@ -207,9 +207,10 @@
       <div class="card">
         <h3>Signal transparency</h3>
         <p>Because the tracer intercepts signals destined for the tracee, an unhandled
-          <code>Ctrl+C</code> would terminate the tracer and strand the child. I forward the
-          pending signal through the third argument of <code>PTRACE_SYSCALL</code>, so the traced
-          process observes the interrupt exactly as it would untraced.</p>
+          <code>Ctrl+C</code> would terminate the tracer and strand the child — alive, and no
+          longer reachable from the terminal. I forward the pending signal through the third
+          argument of <code>PTRACE_SYSCALL</code>, so the traced process observes the interrupt
+          exactly as it would untraced. This was a real defect, fixed in <code>04ea91e</code>.</p>
       </div>
       <div class="card">
         <h3>Kernel-side permissions</h3>
@@ -219,6 +220,70 @@
           target requires <code>CAP_SYS_PTRACE</code> or <code>sudo</code>.</p>
         <pre><span class="p">$</span> cat /proc/sys/kernel/yama/ptrace_scope</pre>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCOPE ────────────────────────────────────────── -->
+<section aria-labelledby="h-scope">
+  <div class="stack">
+    <div class="eyebrow">Scope</div>
+    <div class="col stack-s">
+      <h2 id="h-scope">How this relates to <code>strace</code></h2>
+      <p>This is not a replacement for <code>strace</code>, and it does not try to be. The real
+        <code>strace</code> is roughly 100,000 lines covering a dozen architectures; the tracer
+        here is <strong>169 lines of C</strong>. The goal is the opposite of feature parity: a
+        minimal, readable implementation of the core mechanism, small enough to read end to end in
+        one sitting and still be correct about the parts that are easy to get wrong.</p>
+    </div>
+
+    <div class="col stack-s">
+      <h3 class="subhead">What it had to get right</h3>
+      <ul class="plain">
+        <li><strong>The syscall number is in <code>orig_rax</code>, not <code>rax</code></strong> —
+          the kernel clobbers <code>rax</code> with the return value, which is exactly why the
+          original number is preserved somewhere else.</li>
+        <li><strong>The syscall ABI is not the userspace ABI.</strong> Arguments arrive in
+          <code>rdi, rsi, rdx, r10, r8, r9</code> — <code>r10</code> where a normal SysV function
+          call would use <code>rcx</code>, because the <code>syscall</code> instruction destroys
+          it.</li>
+        <li><strong>There is no <code>errno</code> for a tracer.</strong> The kernel returns the
+          negated code in <code>rax</code>, so a result is an error only inside
+          <code>[-4095, -1]</code> — valid pointers and large results occupy the rest of the
+          range.</li>
+        <li><strong>Syscall stops and real signals both look like <code>SIGTRAP</code>.</strong>
+          Only <code>PTRACE_O_TRACESYSGOOD</code>, which sets bit 7 on syscall stops, tells them
+          apart reliably.</li>
+      </ul>
+      <p>Two of these were real defects before they were features. The stale-register race is
+        fixed in <code>a49eed6</code>; the signal-transparency bug — Ctrl+C killing the tracer and
+        leaving the tracee alive and unreachable from the terminal — in <code>04ea91e</code>.</p>
+    </div>
+
+    <div class="col stack-s">
+      <h3 class="subhead">Deliberate omissions</h3>
+      <p>Named explicitly, because knowing what is missing is part of understanding the
+        problem.</p>
+    </div>
+
+    <div class="scroll-x">
+      <table class="spec">
+        <thead><tr><th>Not implemented</th><th>Why it is non-trivial</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f</code> follow forks</td><td>Requires
+            <code>PTRACE_O_TRACEFORK</code>/<code>VFORK</code>/<code>CLONE</code> and a per-PID
+            state table, since every tracee has its own independent entry/exit phase.</td></tr>
+          <tr><td><code>-e</code> filtering</td><td>Cheap in userspace, but the real win is
+            seccomp-BPF, so the kernel never stops the tracee for uninteresting calls at
+            all.</td></tr>
+          <tr><td><code>-c</code> summary stats</td><td>Needs per-syscall timing and accumulation
+            across the whole run.</td></tr>
+          <tr><td>Full argument decoding</td><td>Around 400 system calls, with flag sets, structs
+            and <code>sockaddr</code> unions to render symbolically.</td></tr>
+          <tr><td>Other architectures</td><td>Every architecture has its own register struct and
+            its own syscall table.</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -260,7 +325,10 @@
           <pre><span class="p">$</span> sudo make install</pre>
           <p>Copies the binary to <code>/usr/local/bin/mystrace</code>, so it can be invoked from
             anywhere. Override the destination with <code>PREFIX</code>, and reverse the operation
-            with <code>sudo make uninstall</code>.</p>
+            with <code>sudo make uninstall</code>. Steps 2 and 3 together are also wrapped in a
+            script:</p>
+          <pre><span class="p">$</span> chmod +x install.sh
+<span class="p">$</span> ./install.sh</pre>
         </div>
       </div>
 
@@ -324,7 +392,8 @@
             register reads.</td></tr>
           <tr><td>Decoding</td><td>Register mapping per the System V AMD64 ABI:
             <code>orig_rax</code> for the identifier, <code>rdi/rsi/rdx/r10/r8/r9</code> for
-            arguments, <code>rax</code> for the result, with negative-range detection for
+            arguments — <code>r10</code> rather than the <code>rcx</code> a userspace call would
+            use — and <code>rax</code> for the result, with negative-range detection for
             <code>errno</code>.</td></tr>
           <tr><td>Memory access</td><td>A word-aligned <code>PTRACE_PEEKDATA</code> reader that
             reconstructs NUL-terminated buffers from the tracee's address space, sized to

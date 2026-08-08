@@ -95,6 +95,7 @@ h1, h2, h3 {
 }
 
 h2 { font-size: clamp(23px, 3vw, 30px); }
+.subhead { font-size: 17px; margin-top: 10px; }   /* a heading inside a section, under the h2 */
 p { margin: 0; }
 a { color: var(--accent); text-underline-offset: 3px; }
 code { font-family: var(--mono); font-size: 0.87em; }
