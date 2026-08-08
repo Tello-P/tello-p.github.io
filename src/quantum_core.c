@@ -126,6 +126,20 @@ void apply_gate_z(quantum_register_t *reg, uint8_t target) {
     QT_GATE_END(reg);
 }
 
+/* Round-to-nearest integer division, symmetric about zero: truncation here
+ * would bias every renormalised amplitude towards the origin. */
+static int32_t div_round(int32_t num, int32_t den) {
+  return num >= 0 ? (num + den / 2) / den : (num - den / 2) / den;
+}
+
+/* An amplitude cannot leave [-1, 1] after renormalising, but rounding can
+ * nudge it over the edge; Q1.14 has room to 2.0 so this only guards the type. */
+static int16_t q14_sat(int32_t v) {
+  if (v >  32767) return  32767;
+  if (v < -32768) return -32768;
+  return (int16_t)v;
+}
+
 int measure(qubit_t *q){
   int16_t alpha_sq = complex_mag_sq(q->alpha);
   int16_t random = random_q14();
@@ -176,16 +190,26 @@ int measure_qubit(quantum_register_t *reg, uint8_t target) {
     }
   }
 
+  /* Renormalise by what actually survived the collapse.
+   *
+   * sum_sq is the surviving probability in Q1.14, so the divisor we need is
+   * sqrt(sum_sq / Q14_ONE) expressed in Q1.14, i.e. sqrt(sum_sq * Q14_ONE).
+   * This used to be the constant 11585 (= 1/sqrt(2)), which is only correct
+   * when the measured outcome had probability exactly one half — measuring an
+   * already-determined qubit doubled the norm instead of leaving it alone.
+   * One integer square root per measurement, not per gate.
+   */
   if (sum_sq > 0) {
-    for (uint16_t i = 0; i < reg->dim; i++) {
-      if (reg->state[i].real != 0 || reg->state[i].imag != 0) {
-        QT_STEP(reg, i, i);
-        int32_t r_ext = (int32_t)reg->state[i].real << 14;
-        int32_t i_ext = (int32_t)reg->state[i].imag << 14;
-        int16_t root_sum = 11585; // Simplification
-        // 1/sqrt(sum_sq) is needed if i have != 90º logic gates
-        reg->state[i].real = (int16_t)(r_ext / root_sum);
-        reg->state[i].imag = (int16_t)(i_ext / root_sum);
+    int32_t root = (int32_t)fp_isqrt((uint32_t)sum_sq * (uint32_t)Q14_ONE);
+    if (root > 0) {
+      for (uint16_t i = 0; i < reg->dim; i++) {
+        if (reg->state[i].real != 0 || reg->state[i].imag != 0) {
+          QT_STEP(reg, i, i);
+          int32_t r_ext = (int32_t)reg->state[i].real << 14;
+          int32_t i_ext = (int32_t)reg->state[i].imag << 14;
+          reg->state[i].real = q14_sat(div_round(r_ext, root));
+          reg->state[i].imag = q14_sat(div_round(i_ext, root));
+        }
       }
     }
   }

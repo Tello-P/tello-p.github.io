@@ -13,6 +13,7 @@ typedef struct {
 } complex_q14_t;
 
 int16_t fp_mul(int16_t a, int16_t b);
+uint32_t fp_isqrt(uint32_t x);
 complex_q14_t complex_add(complex_q14_t a, complex_q14_t b);
 complex_q14_t complex_mul(complex_q14_t a, complex_q14_t b);
 int16_t complex_mag_sq(complex_q14_t a);

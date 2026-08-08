@@ -41,6 +41,25 @@ int16_t fp_mul(int16_t a, int16_t b) {
 }
 
 
+/* floor(sqrt(x)) on integers — restoring shift-and-subtract, 16 iterations,
+ * no division and no floating point, so it costs the same on the AVR as it
+ * does on a PC. Used to renormalise the register after a measurement.
+ */
+uint32_t fp_isqrt(uint32_t x) {
+    uint32_t rem = 0, root = 0;
+
+    for (uint8_t i = 0; i < 16; i++) {
+        root <<= 1;
+        rem = (rem << 2) | (x >> 30);
+        x <<= 2;
+        if (root < rem) {
+            rem -= ++root;
+            ++root;
+        }
+    }
+    return root >> 1;
+}
+
 complex_q14_t complex_add(complex_q14_t a, complex_q14_t b) {
     return (complex_q14_t){a.real + b.real, a.imag + b.imag};
 }
