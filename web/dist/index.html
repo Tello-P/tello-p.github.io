@@ -45,6 +45,7 @@
       <span class="btn__glyph" aria-hidden="true">▸</span> Compile &amp; run
     </button>
 
+    <button id="help" class="btn btn--icon" title="How to use this (?)" aria-label="How to use this" aria-haspopup="dialog">?</button>
     <button id="theme" class="btn btn--icon" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
   </div>
 </header>
@@ -172,6 +173,133 @@
 
   <div class="statusline" id="status">Ready — press <kbd>Compile &amp; run</kbd></div>
 </footer>
+
+<!-- ── how to use ────────────────────────────────────────────── -->
+<dialog class="modal" id="guide" aria-labelledby="h-guide">
+  <div class="modal__head">
+    <h2 id="h-guide">Using this debugger</h2>
+    <button class="modal__close" type="button" id="guide-close" aria-label="Close">✕</button>
+  </div>
+
+  <div class="modal__body">
+    <ol class="steps">
+      <li>
+        <div>
+          <h3>Load a preset, or build a circuit</h3>
+          <p>
+            The fastest start is the <code>Presets…</code> menu in the Circuit panel —
+            <strong>Bell state</strong> is the classic one: a Hadamard puts qubit 0 into
+            superposition, a CNOT entangles it with qubit 1, and the measurement collapses
+            both at once.
+          </p>
+          <p>
+            To build your own, set the arguments below the gate buttons first — a
+            <strong>Target</strong> qubit, a <strong>Control</strong> as well for CNOT, or
+            the <strong>Basis state</strong> the Oracle should mark — then click
+            <code>H</code>, <code>X</code>, <code>Z</code>, <code>C⊕</code>,
+            <code>Oracle</code>, <code>Diffuser</code> or <code>Measure</code> to append it.
+            Clicking a gate already on the wire removes it.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Set the run options</h3>
+          <p>
+            <strong>Qubits</strong> sizes the register (1–4; the state vector doubles each
+            time). <strong>Trace</strong> chooses the granularity: <em>per gate</em> shows
+            only gate boundaries, <em>per step</em> shows every single inner-loop iteration
+            of the C — slower, but it is where the interesting part is.
+          </p>
+          <p>
+            <strong>RNG seed</strong> is optional. Measurement is genuinely random; give it a
+            seed and the same circuit collapses the same way every time.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Press <kbd>Compile &amp; run</kbd></h3>
+          <p>
+            The C core executes and streams back a trace of everything it did. The badge next
+            to the title says which build answered — the one bundled into this page, or
+            <code>gcc</code> if you are running the local server, which recompiles the
+            sources on every run.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Scrub through the execution</h3>
+          <p>
+            Nothing is animated live — the whole run is recorded first, so you can move
+            through it in both directions with the transport bar at the bottom, or with the
+            keyboard: <kbd>Space</kbd> play/pause, <kbd>←</kbd> <kbd>→</kbd> one event at a
+            time, <kbd>Home</kbd> <kbd>End</kbd> to jump to either end. The
+            <strong>Speed</strong> selector goes from 0.5× up to max.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Watch the four panels move together</h3>
+          <p>
+            Every panel shows the same instant of the same run. The status line at the very
+            bottom narrates it in words — which op is running, which two basis states the
+            current step is combining, what a measurement returned.
+          </p>
+        </div>
+      </li>
+    </ol>
+
+    <dl class="panels">
+      <div>
+        <dt>State vector</dt>
+        <dd>
+          One bar per basis state |00⟩, |01⟩… Blue is a positive amplitude, red a negative
+          one; the highlighted bars are the two the current step is touching. This is the
+          raw Q1.14 data straight out of the register.
+        </dd>
+      </div>
+      <div>
+        <dt>Bloch spheres</dt>
+        <dd>
+          The reduced state of each qubit on its own. When the arrow shrinks inside the
+          sphere (‖r‖ &lt; 1) that qubit is entangled — it has no definite state of its own
+          any more. Run the Bell preset and watch both arrows collapse inward at the CNOT.
+        </dd>
+      </div>
+      <div>
+        <dt>Executing source</dt>
+        <dd>
+          The actual C being run, with the current line highlighted. The line numbers come
+          from <code>__LINE__</code> inside <code>quantum_core.c</code>, so this is a real
+          program counter, not a re-enactment. The dropdown switches between the core, the
+          register, the fixed-point maths and the Arduino build.
+        </dd>
+      </div>
+      <div>
+        <dt>Stat tiles</dt>
+        <dd>
+          Under the state vector. <strong>Norm</strong> should stay at 1.0000 and
+          <strong>Q1.14 drift</strong> is how far it has wandered — the accumulated cost of
+          14-bit rounding, and the number the whole project is really about. It turns amber
+          past 2%. <strong>Per gate</strong> is the host timing; the same gate takes 175 µs
+          on an ATmega328P at 16 MHz.
+        </dd>
+      </div>
+    </dl>
+
+    <p class="modal__foot">
+      Press <kbd>Esc</kbd> or click outside to close · reopen any time with
+      <kbd>?</kbd> or the <kbd>?</kbd> button in the header.
+    </p>
+  </div>
+</dialog>
 
 <script type="module" src="./app.js"></script>
 </body>

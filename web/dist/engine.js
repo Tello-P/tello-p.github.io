@@ -57,7 +57,7 @@ let sink = null;
 
 const wasmEngine = {
   kind: 'wasm',
-  label: 'WebAssembly · in-browser',
+  label: 'bundled · in-browser',
 
   async sources() {
     const res = await fetch('./sources.json');

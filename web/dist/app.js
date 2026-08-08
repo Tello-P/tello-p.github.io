@@ -22,6 +22,7 @@ const el = {
   engineBadge: $('engine-badge'),
   tpFirst: $('tp-first'), tpPrev: $('tp-prev'), tpPlay: $('tp-play'),
   tpNext: $('tp-next'), tpLast: $('tp-last'),
+  help: $('help'), guide: $('guide'), guideClose: $('guide-close'),
 };
 
 /* ── model ─────────────────────────────────────────────────────── */
@@ -753,9 +754,25 @@ el.theme.addEventListener('click', () => {
   localStorage.setItem('eqe-theme', next);
 });
 
+/* ── how to use ─────────────────────────────────────────────────
+ * Opens by itself the first time someone lands here, and on #how-to-use
+ * so the project page can link straight into it. */
+
+el.help.addEventListener('click', () => el.guide.showModal());
+el.guideClose.addEventListener('click', () => el.guide.close());
+el.guide.addEventListener('click', (e) => { if (e.target === el.guide) el.guide.close(); });
+el.guide.addEventListener('close', () => localStorage.setItem('eqe-guide-seen', '1'));
+
+if (location.hash === '#how-to-use' || !localStorage.getItem('eqe-guide-seen')) {
+  el.guide.showModal();
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
-  if (e.key === ' ') { e.preventDefault(); el.tpPlay.click(); }
+  // Esc is handled by the dialog itself; transport keys must not act behind it
+  if (el.guide.open) return;
+  if (e.key === '?') { e.preventDefault(); el.guide.showModal(); }
+  else if (e.key === ' ') { e.preventDefault(); el.tpPlay.click(); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); el.tpNext.click(); }
   else if (e.key === 'ArrowLeft')  { e.preventDefault(); el.tpPrev.click(); }
   else if (e.key === 'Home')       { e.preventDefault(); el.tpFirst.click(); }
