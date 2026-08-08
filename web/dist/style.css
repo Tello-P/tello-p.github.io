@@ -326,6 +326,35 @@ kbd {
 .gate-btn:hover { background: var(--surface-3); border-color: var(--rule); }
 .gate-btn--wide { min-width: 0; flex: 1; font-family: var(--sans); font-weight: 500; }
 
+/* a gate is picked first, then placed — the selection has to be obvious */
+.gate-btn { cursor: grab; }
+.gate-btn:active { cursor: grabbing; }
+
+.gate-btn.is-selected {
+  background: var(--pos-wash);
+  border-color: var(--pos);
+  color: var(--pos);
+  font-weight: 600;
+}
+
+.btn--add { margin-left: auto; }
+
+/* drop target */
+.circuit-scroll.is-target {
+  outline: 2px dashed var(--pos);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+  background: var(--pos-wash);
+}
+
+.drop-marker {
+  stroke: var(--pos);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
 .palette__args { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .palette__args select { padding: 3px 6px; font-family: var(--mono); }
 

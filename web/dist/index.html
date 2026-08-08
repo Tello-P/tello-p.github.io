@@ -72,16 +72,16 @@
 
     <div class="panel__body">
       <div class="palette" id="palette">
-        <div class="palette__row">
-          <button class="gate-btn" data-op="h"    title="Hadamard — creates superposition">H</button>
-          <button class="gate-btn" data-op="x"    title="Pauli-X — bit flip">X</button>
-          <button class="gate-btn" data-op="z"    title="Pauli-Z — phase flip">Z</button>
-          <button class="gate-btn" data-op="cnot" title="Controlled-NOT — entangles">C⊕</button>
+        <div class="palette__row" role="group" aria-label="Gate to place">
+          <button class="gate-btn" draggable="true" aria-pressed="false" data-op="h"    title="Hadamard — creates superposition">H</button>
+          <button class="gate-btn" draggable="true" aria-pressed="false" data-op="x"    title="Pauli-X — bit flip">X</button>
+          <button class="gate-btn" draggable="true" aria-pressed="false" data-op="z"    title="Pauli-Z — phase flip">Z</button>
+          <button class="gate-btn" draggable="true" aria-pressed="false" data-op="cnot" title="Controlled-NOT — entangles">C⊕</button>
         </div>
         <div class="palette__row">
-          <button class="gate-btn gate-btn--wide" data-op="oracle"   title="apply_oracle — negate one basis amplitude">Oracle</button>
-          <button class="gate-btn gate-btn--wide" data-op="diffuser" title="apply_diffuser — amplitude amplification">Diffuser</button>
-          <button class="gate-btn gate-btn--wide" data-op="measure"  title="measure_qubit — collapse">Measure</button>
+          <button class="gate-btn gate-btn--wide" draggable="true" aria-pressed="false" data-op="oracle"   title="apply_oracle — negate one basis amplitude">Oracle</button>
+          <button class="gate-btn gate-btn--wide" draggable="true" aria-pressed="false" data-op="diffuser" title="apply_diffuser — amplitude amplification">Diffuser</button>
+          <button class="gate-btn gate-btn--wide" draggable="true" aria-pressed="false" data-op="measure"  title="measure_qubit — collapse">Measure</button>
         </div>
         <div class="palette__args">
           <label class="field field--tight">
@@ -92,13 +92,16 @@
             <span>Target</span>
             <select id="arg-b"></select>
           </label>
+          <button id="add" class="btn btn--primary btn--add" type="button">
+            <span aria-hidden="true">+</span> Add
+          </button>
         </div>
       </div>
 
-      <div class="circuit-scroll">
+      <div class="circuit-scroll" id="circuit-drop">
         <svg id="circuit" class="circuit" role="img" aria-label="Quantum circuit diagram"></svg>
       </div>
-      <p class="hint" id="circuit-hint">Pick a gate above to append it. Click a placed gate to remove it.</p>
+      <p class="hint" id="circuit-hint">Pick a gate, set its targets, then press <kbd>Add</kbd> — or drag the gate onto the circuit to drop it at a position. Click a placed gate to remove it.</p>
     </div>
   </section>
 
@@ -193,12 +196,19 @@
             both at once.
           </p>
           <p>
-            To build your own, set the arguments below the gate buttons first — a
-            <strong>Target</strong> qubit, a <strong>Control</strong> as well for CNOT, or
-            the <strong>Basis state</strong> the Oracle should mark — then click
+            To build your own it goes in three beats. <strong>One:</strong> click a gate —
             <code>H</code>, <code>X</code>, <code>Z</code>, <code>C⊕</code>,
-            <code>Oracle</code>, <code>Diffuser</code> or <code>Measure</code> to append it.
-            Clicking a gate already on the wire removes it.
+            <code>Oracle</code>, <code>Diffuser</code> or <code>Measure</code> — and it
+            highlights as the selected one. <strong>Two:</strong> set its arguments just
+            below: a <strong>Target</strong> qubit, a <strong>Control</strong> as well for
+            CNOT, or the <strong>Basis state</strong> the Oracle should mark.
+            <strong>Three:</strong> press <kbd>Add</kbd> to put it at the end.
+          </p>
+          <p>
+            Or skip the last step and <strong>drag the gate straight onto the circuit</strong>.
+            A dashed marker shows where it will land, so you can drop it between two gates
+            that are already there instead of only at the end. Clicking a gate already on the
+            wire removes it.
           </p>
         </div>
       </li>

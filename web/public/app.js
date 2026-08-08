@@ -23,6 +23,7 @@ const el = {
   tpFirst: $('tp-first'), tpPrev: $('tp-prev'), tpPlay: $('tp-play'),
   tpNext: $('tp-next'), tpLast: $('tp-last'),
   help: $('help'), guide: $('guide'), guideClose: $('guide-close'),
+  add: $('add'), circuitDrop: $('circuit-drop'),
 };
 
 /* ── model ─────────────────────────────────────────────────────── */
@@ -118,7 +119,26 @@ function refreshArgs() {
 
 /* ── circuit ───────────────────────────────────────────────────── */
 
-function addOp(name) {
+/* Highlight the chosen gate and point the argument selectors at it. Selecting
+ * does not place anything — that is Add, or a drop onto the circuit. */
+function selectOp(name, { announce = true } = {}) {
+  pendingOp = name;
+  for (const btn of el.palette.querySelectorAll('.gate-btn')) {
+    const on = btn.dataset.op === name;
+    btn.classList.toggle('is-selected', on);
+    btn.setAttribute('aria-pressed', String(on));
+  }
+  refreshArgs();
+
+  if (!announce) return;
+  const spec = OPS[name];
+  setStatus(spec.args.length
+    ? `${spec.label === 'DIFF' ? 'Diffuser' : name.toUpperCase()} selected — set the ${spec.args.join(' and ')}, then press Add or drag it onto the circuit.`
+    : `${name.toUpperCase()} selected — press Add or drag it onto the circuit.`);
+}
+
+/* index === null appends; otherwise the op is inserted at that column */
+function addOp(name, index = null) {
   const spec = OPS[name];
   const a = spec.args.length >= 1 ? Number(el.argA.value) : -1;
   const b = spec.args.length >= 2 ? Number(el.argB.value) : -1;
@@ -127,9 +147,11 @@ function addOp(name) {
     setStatus('CNOT needs distinct control and target qubits.', 'error');
     return;
   }
-  model.ops.push({ name, a, b });
+  const at = index === null ? model.ops.length : Math.max(0, Math.min(index, model.ops.length));
+  model.ops.splice(at, 0, { name, a, b });
   drawCircuit();
-  setStatus(`Added ${name.toUpperCase()} — ${model.ops.length} op(s) queued. Press Compile & run.`);
+  setStatus(`${index === null ? 'Added' : `Inserted at position ${at + 1}:`} ${name.toUpperCase()} — ` +
+            `${model.ops.length} op(s) queued. Press Compile & run.`);
 }
 
 function drawCircuit() {
@@ -156,6 +178,14 @@ function drawCircuit() {
   el.circuit._playhead = playhead;
   el.circuit._xOf = xOf;
   el.circuit._colW = colW;
+  el.circuit._padL = padL;
+
+  // where a dragged gate would land; only visible mid-drag
+  const marker = svg('line', {
+    class: 'drop-marker', x1: 0, y1: padT - 6, x2: 0, y2: padT + n * rowH + 6, opacity: 0,
+  });
+  el.circuit.append(marker);
+  el.circuit._marker = marker;
 
   for (let q = 0; q < n; q++) {
     el.circuit.append(
@@ -683,20 +713,85 @@ async function run() {
 
 /* ── wiring ────────────────────────────────────────────────────── */
 
+/* Build a circuit in three beats: pick the gate, set its arguments, place it.
+ * Placing is either the Add button or a drag onto the circuit. */
+
 el.palette.addEventListener('click', (e) => {
   const btn = e.target.closest('.gate-btn');
   if (!btn) return;
-  pendingOp = btn.dataset.op;
-  refreshArgs();
+  selectOp(btn.dataset.op);
+});
+
+el.add.addEventListener('click', () => {
+  if (!pendingOp) { setStatus('Pick a gate first.', 'error'); return; }
   addOp(pendingOp);
 });
 
-// keep the arg selectors labelled for whichever gate the user hovers/focuses
-el.palette.addEventListener('pointerover', (e) => {
+/* ── drag a gate onto the circuit ───────────────────────────────
+ * The drop column decides where the op is inserted, so gates can go in the
+ * middle of an existing circuit and not only at the end. Dragging is a
+ * shortcut, never the only way in: Add does the same job from the keyboard. */
+
+let dropIndex = null;
+
+el.palette.addEventListener('dragstart', (e) => {
   const btn = e.target.closest('.gate-btn');
-  if (!btn || btn.dataset.op === pendingOp) return;
-  pendingOp = btn.dataset.op;
-  refreshArgs();
+  if (!btn) return;
+  selectOp(btn.dataset.op, { announce: false });
+  e.dataTransfer.setData('text/plain', btn.dataset.op);
+  e.dataTransfer.effectAllowed = 'copy';
+  el.circuitDrop.classList.add('is-target');
+});
+
+el.palette.addEventListener('dragend', () => {
+  el.circuitDrop.classList.remove('is-target');
+  hideDropMarker();
+});
+
+function columnAt(clientX) {
+  const box = el.circuit.getBoundingClientRect();
+  if (!box.width) return model.ops.length;
+  // the viewBox is 1:1 with the layout box unless the panel squeezes it
+  const scale = el.circuit.viewBox.baseVal.width / box.width;
+  const x = (clientX - box.left) * scale;
+  const k = Math.round((x - el.circuit._padL) / el.circuit._colW);
+  return Math.max(0, Math.min(k, model.ops.length));
+}
+
+function showDropMarker(k) {
+  const m = el.circuit._marker;
+  if (!m) return;
+  const x = el.circuit._padL + k * el.circuit._colW;
+  m.setAttribute('x1', x);
+  m.setAttribute('x2', x);
+  m.setAttribute('opacity', 1);
+  el.circuit.appendChild(m);   // keep it above the gates
+}
+
+function hideDropMarker() {
+  dropIndex = null;
+  el.circuit._marker?.setAttribute('opacity', 0);
+}
+
+el.circuitDrop.addEventListener('dragover', (e) => {
+  if (!pendingOp) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  dropIndex = columnAt(e.clientX);
+  showDropMarker(dropIndex);
+});
+
+el.circuitDrop.addEventListener('dragleave', (e) => {
+  if (!el.circuitDrop.contains(e.relatedTarget)) hideDropMarker();
+});
+
+el.circuitDrop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const name = e.dataTransfer.getData('text/plain') || pendingOp;
+  const at = dropIndex ?? columnAt(e.clientX);
+  hideDropMarker();
+  el.circuitDrop.classList.remove('is-target');
+  if (name in OPS) addOp(name, at);
 });
 
 el.qubits.addEventListener('change', () => {
@@ -787,8 +882,7 @@ if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 el.qubits.value = '2';
 model.qubits = 2;
 model.dim = 4;
-pendingOp = 'h';
-refreshArgs();
+selectOp('h', { announce: false });
 drawCircuit();
 buildAmps();
 buildBloch();
