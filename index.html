@@ -178,6 +178,82 @@ code {
   outline-offset: 2px;
 }
 
+/* ── tutorial ───────────────────────────────────────────── */
+.steps {
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 1.4rem;
+}
+
+.steps > li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 1.9rem 1fr;
+  gap: 0.9rem;
+  color: var(--ink-2);
+}
+
+.steps > li::before {
+  content: counter(step);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.9rem;
+  text-align: center;
+  color: var(--pos);
+  background: var(--pos-wash);
+  border-radius: 50%;
+  height: 1.9rem;
+}
+
+.steps h3 {
+  font-size: 0.98rem;
+  color: var(--ink);
+  margin-bottom: 0.2rem;
+}
+
+.steps p { margin: 0; }
+.steps p + p { margin-top: 0.4rem; }
+
+kbd {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.panels {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.panels > div {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+}
+
+.panels dt {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.panels dd { color: var(--ink-2); font-size: 0.95rem; }
+
+@media (max-width: 32rem) {
+  .panels > div { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
 /* ── skills ─────────────────────────────────────────────── */
 .tags {
   display: flex;
@@ -269,9 +345,125 @@ footer {
 
       <div class="actions">
         <a class="btn btn--primary" href="./web/dist/">▸ Open the live demo</a>
+        <a class="btn" href="#h-tutorial">How to use it</a>
         <a class="btn" href="https://github.com/Tello-P/tello-p.github.io">Source on GitHub</a>
       </div>
     </article>
+  </section>
+
+  <section aria-labelledby="h-tutorial">
+    <h2 id="h-tutorial">Using the demo</h2>
+
+    <ol class="steps">
+      <li>
+        <div>
+          <h3>Load a preset, or build a circuit</h3>
+          <p>
+            The fastest start is the <code>Presets…</code> menu in the Circuit panel —
+            <strong>Bell state</strong> is the classic one: a Hadamard puts qubit 0 into
+            superposition, a CNOT entangles it with qubit 1, and the measurement collapses
+            both at once.
+          </p>
+          <p>
+            To build your own, set the arguments below the gate buttons first — a
+            <strong>Target</strong> qubit, a <strong>Control</strong> as well for CNOT, or the
+            <strong>Basis state</strong> the Oracle should mark — then click <code>H</code>, <code>X</code>,
+            <code>Z</code>, <code>C⊕</code>, <code>Oracle</code>, <code>Diffuser</code> or
+            <code>Measure</code> to append it. Clicking a gate already on the wire removes it.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Set the run options</h3>
+          <p>
+            <strong>Qubits</strong> sizes the register (1–4; the state vector doubles each
+            time). <strong>Trace</strong> chooses the granularity: <em>per gate</em> shows
+            only gate boundaries, <em>per step</em> shows every single inner-loop iteration
+            of the C — slower, but it is where the interesting part is.
+          </p>
+          <p>
+            <strong>RNG seed</strong> is optional. Measurement is genuinely random; give it a
+            seed and the same circuit collapses the same way every time.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Press <kbd>Compile &amp; run</kbd></h3>
+          <p>
+            The C core executes and streams back a trace of everything it did. The badge next
+            to the title says which build answered — <code>WebAssembly</code> in the browser,
+            or <code>gcc</code> if you are running the local server, which recompiles the
+            sources on every run.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Scrub through the execution</h3>
+          <p>
+            Nothing is animated live — the whole run is recorded first, so you can move
+            through it in both directions with the transport bar at the bottom, or with the
+            keyboard: <kbd>Space</kbd> play/pause, <kbd>←</kbd> <kbd>→</kbd> one event at a
+            time, <kbd>Home</kbd> <kbd>End</kbd> to jump to either end. The
+            <strong>Speed</strong> selector goes from 0.5× up to max.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <div>
+          <h3>Watch the four panels move together</h3>
+          <p>
+            Every panel shows the same instant of the same run. The status line at the very
+            bottom narrates it in words — which op is running, which two basis states the
+            current step is combining, what a measurement returned.
+          </p>
+        </div>
+      </li>
+    </ol>
+
+    <dl class="panels">
+      <div>
+        <dt>State vector</dt>
+        <dd>
+          One bar per basis state |00⟩, |01⟩… Blue is a positive amplitude, red a negative
+          one; the highlighted bars are the two the current step is touching. This is the
+          raw Q1.14 data straight out of the register.
+        </dd>
+      </div>
+      <div>
+        <dt>Bloch spheres</dt>
+        <dd>
+          The reduced state of each qubit on its own. When the arrow shrinks inside the
+          sphere (‖r‖ &lt; 1) that qubit is entangled — it has no definite state of its own
+          any more. Run the Bell preset and watch both arrows collapse inward at the CNOT.
+        </dd>
+      </div>
+      <div>
+        <dt>Executing source</dt>
+        <dd>
+          The actual C being run, with the current line highlighted. The line numbers come
+          from <code>__LINE__</code> inside <code>quantum_core.c</code>, so this is a real
+          program counter, not a re-enactment. The dropdown switches between the core, the
+          register, the fixed-point maths and the Arduino build.
+        </dd>
+      </div>
+      <div>
+        <dt>Stat tiles</dt>
+        <dd>
+          Under the state vector. <strong>Norm</strong> should stay at 1.0000 and
+          <strong>Q1.14 drift</strong> is how far it has wandered — the accumulated cost of
+          14-bit rounding, and the number the whole project is really about. It turns amber
+          past 2%. <strong>Per gate</strong> is the host timing; the same gate takes 175 µs
+          on an ATmega328P at 16 MHz.
+        </dd>
+      </div>
+    </dl>
   </section>
 
   <section aria-labelledby="h-skills">
