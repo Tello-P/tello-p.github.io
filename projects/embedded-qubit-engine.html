@@ -20,30 +20,118 @@
   </header>
 
   <section aria-labelledby="h-about">
-    <h2 id="h-about">About</h2>
+    <h2 id="h-about">The idea</h2>
 
     <div class="prose">
       <p>
-        A quantum state simulator written in plain C for microcontrollers. Instead of
-        floating-point maths, every amplitude is stored as a <strong>Q1.14 fixed-point
-        complex number</strong> — two <code>int16_t</code> values — so a multi-qubit
-        register fits in a few hundred bytes and runs on an 8-bit AVR with no FPU.
+        Quantum simulators are built out of floating-point complex numbers. An
+        <strong>ATmega328P has no floating-point unit</strong> — no <code>double</code>,
+        no <code>sqrt()</code>, no hardware divide, 2&nbsp;KB of RAM and an 8-bit ALU.
+        Every multiply is a subroutine call. So the question was simple: how much real
+        quantum mechanics survives if you take all of that away?
       </p>
 
       <p>
-        The core implements the usual building blocks: Hadamard, Pauli-X, Pauli-Z and
-        CNOT gates, a Grover oracle and diffuser, and measurement that collapses the
-        register using a seeded RNG. The same source is compiled twice — once with
-        <code>avr-gcc</code> for the Arduino sketch, once with GCC for the host test
-        suite — so results can be compared between the two.
+        The answer is a working simulator in <strong>under 300 lines of C</strong> —
+        superposition, entanglement, interference, Grover's algorithm and probabilistic
+        measurement — where the largest number the machine ever handles is an
+        <code>int16_t</code>. There is no library underneath it. Every piece of maths in
+        it had to be built by hand, and that is really what the project is.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-built">
+    <h2 id="h-built">Built from scratch</h2>
+
+    <div class="prose">
+      <p>
+        <strong>A number format.</strong> Amplitudes are <strong>Q1.14 fixed-point</strong>:
+        one sign bit, one integer bit, fourteen fractional bits, so <code>1.0</code> is
+        literally the integer <code>16384</code>. A complex amplitude is two
+        <code>int16_t</code> — four bytes. An entire 4-qubit register is 64 bytes, and the
+        whole state pool is statically allocated, because there is no
+        <code>malloc</code> worth trusting on a chip this size.
       </p>
 
       <p>
-        The live demo compiles that C core to <strong>WebAssembly</strong> and wraps it
-        in a trace debugger. You build a circuit gate by gate, run it, then scrub
-        through the execution step by step: the state vector, the Bloch sphere of each
-        qubit and the exact line of C being executed all move together. It is the same
-        code that runs on the microcontroller, just instrumented.
+        <strong>The multiply, in AVR assembly.</strong> Multiplying two Q1.14 values means a
+        16×16→32-bit product shifted back down by 14, with rounding. Written in C that is a
+        slow <code>int32_t</code> detour. So <code>fp_mul()</code> drops into inline assembly
+        and does it with the AVR's <code>MULS</code>/<code>MULSU</code> instructions,
+        assembling the partial products by hand and replacing the 14-bit shift with two
+        rotates through the carry — because on this core a shift by 16 is free and a shift
+        by 14 is not. A portable C version sits behind an <code>#ifdef</code> so the same
+        file still builds on a PC.
+      </p>
+
+      <p>
+        <strong>No square root.</strong> The Hadamard gate needs 1/√2, and there is no
+        <code>sqrt()</code> to call. It ships as a constant — <code>Q14_INV_SQRT2</code>,
+        the integer <code>11585</code> — and the same constant does double duty as the
+        renormalisation factor after a measurement, which is exactly correct as long as
+        every gate in the set rotates by 90°. That shortcut is written down in the source
+        as a deliberate assumption, not hidden.
+      </p>
+
+      <p>
+        <strong>Randomness.</strong> Measurement has to actually be random, and
+        <code>rand()</code> is not something you want on a microcontroller. The core carries
+        its own 64-bit SplitMix-style generator and folds its output down into a Q1.14
+        fraction, so collapse is decided by an integer comparison against the accumulated
+        probability. Seed it and the same circuit collapses the same way every time — which
+        is what makes the debugger reproducible.
+      </p>
+
+      <p>
+        <strong>Gates without matrices.</strong> The textbook approach applies a
+        2<sup>n</sup>×2<sup>n</sup> matrix to the state vector. That is unaffordable here, so
+        gates are implemented as <strong>bit-mask butterflies</strong>: for a target qubit,
+        walk the state indices, pair each <code>i</code> with <code>i | mask</code>, and
+        touch only that pair. X and CNOT become pure swaps — no arithmetic at all. It is
+        <em>O(2<sup>n</sup>)</em> per gate with no allocation and no temporaries.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-cost">
+    <h2 id="h-cost">What it costs</h2>
+
+    <div class="prose">
+      <p>
+        Fourteen fractional bits is not much room. Every gate rounds, and the rounding
+        accumulates: the norm ⟨ψ|ψ⟩ drifts away from 1 as a circuit gets deeper. Rather
+        than hide that, the debugger puts it on screen as a live <strong>drift</strong>
+        readout — the honest error budget of the whole design, visible gate by gate.
+        Measuring it was the point of building the tracer in the first place.
+      </p>
+
+      <p>
+        The same source compiles twice — <code>avr-gcc</code> for the Arduino sketch, GCC
+        for the host test suite — so the fixed-point results can be diffed between the
+        8-bit target and the desktop. On an ATmega328P at 16 MHz a gate takes about
+        <strong>175 µs</strong>.
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-demo">
+    <h2 id="h-demo">The debugger</h2>
+
+    <div class="prose">
+      <p>
+        The demo is not a re-implementation in JavaScript. The same C is compiled a third
+        way, to WebAssembly, and instrumented with tracing macros that compile to nothing
+        in the firmware build. You assemble a circuit, run it, and then scrub back and
+        forward through the recorded execution: the raw Q1.14 state vector, the Bloch
+        sphere of each qubit, and the <em>exact line of C</em> currently executing all move
+        together, driven by <code>__LINE__</code> values the core itself emitted.
+      </p>
+
+      <p>
+        A parity check runs seven circuits through the native binary and the WebAssembly
+        build and compares the traces byte for byte, so what the browser shows is provably
+        what the microcontroller does.
       </p>
     </div>
   </section>

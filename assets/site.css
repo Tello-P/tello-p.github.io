@@ -375,18 +375,19 @@ kbd {
 .contact {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1.75rem;
-  font-family: var(--mono);
-  font-size: 0.88rem;
+  gap: 0.6rem;
 }
 
-.contact a {
+.contact .btn { padding: 0.55rem 1rem; }
+
+.btn__icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
   color: var(--pos);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
 }
 
-.contact a:hover { border-bottom-color: currentColor; }
+.btn:hover .btn__icon { color: var(--ink); }
 
 footer {
   margin-top: 3.5rem;
