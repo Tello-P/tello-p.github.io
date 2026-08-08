@@ -1,0 +1,398 @@
+/* Site-wide styles for tello-p.github.io.
+   Palette shared with the Embedded Qubit Engine debugger (web/dist/style.css).
+   Light is the base definition; the dark block redefines only the tokens. */
+:root {
+  color-scheme: light;
+
+  --plane:     #f9f9f7;
+  --surface:   #fcfcfb;
+  --surface-2: #f0efec;
+
+  --ink:       #0b0b0b;
+  --ink-2:     #52514e;
+  --muted:     #898781;
+
+  --rule:      #c3c2b7;
+  --border:    rgba(11, 11, 11, 0.10);
+
+  --pos:       #2a78d6;
+  --accent:    #fab219;
+  --pos-wash:  rgba(42, 120, 214, 0.12);
+
+  --scrim:     rgba(11, 11, 11, 0.45);
+
+  --radius:    10px;
+  --radius-sm: 6px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --plane:     #0d0d0d;
+    --surface:   #1a1a19;
+    --surface-2: #222220;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --muted:     #898781;
+    --rule:      #383835;
+    --border:    rgba(255, 255, 255, 0.10);
+    --pos:       #3987e5;
+    --pos-wash:  rgba(57, 135, 229, 0.16);
+    --scrim:     rgba(0, 0, 0, 0.65);
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: var(--plane);
+  color: var(--ink);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 8vw, 5rem) 1.25rem 4rem;
+}
+
+/* ── intro ──────────────────────────────────────────────── */
+.intro__mark {
+  font-size: 1.6rem;
+  color: var(--pos);
+  line-height: 1;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 6vw, 2.6rem);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.role {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+
+.lede {
+  margin-top: 1.5rem;
+  font-size: 1.05rem;
+  color: var(--ink-2);
+  max-width: 40rem;
+}
+
+/* ── sections ───────────────────────────────────────────── */
+section { margin-top: 3.25rem; }
+
+h2 {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+/* ── project cards / pages ──────────────────────────────── */
+.project {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: clamp(1.25rem, 4vw, 1.9rem);
+}
+
+.project h3 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.15rem;
+}
+
+.project__sub {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 1.1rem;
+}
+
+.project p { color: var(--ink-2); margin-bottom: 1rem; }
+.project p:last-of-type { margin-bottom: 1.5rem; }
+
+.project strong { color: var(--ink); font-weight: 600; }
+
+/* the whole card is the link on the index */
+.project--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.project--link h3 { color: var(--pos); }   /* the title carries the affordance */
+.project--link:hover { border-color: var(--rule); }
+.project--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.project__more {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--pos);
+}
+
+.cards { display: grid; gap: 1rem; }
+
+/* ── prose on a project page ────────────────────────────── */
+.prose p { color: var(--ink-2); margin-bottom: 1rem; }
+.prose p:last-child { margin-bottom: 0; }
+.prose strong { color: var(--ink); font-weight: 600; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.87em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ── buttons ────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-decoration: none;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover { border-color: var(--rule); }
+
+.btn--primary {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: #ffffff;
+}
+
+.btn--primary:hover { filter: brightness(1.08); border-color: var(--pos); }
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── back link ──────────────────────────────────────────── */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.back:hover { color: var(--ink-2); }
+
+/* ── tutorial dialog ────────────────────────────────────── */
+.modal {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(85vh, 52rem);
+  margin: auto;          /* the * reset drops the UA's centering margin */
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.modal::backdrop { background: var(--scrim); }
+
+.modal__head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem clamp(1.1rem, 4vw, 1.75rem);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__head h2 {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.modal__close {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.modal__close:hover { color: var(--ink); background: var(--surface-2); }
+.modal__close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.modal__body {
+  padding: 1.5rem clamp(1.1rem, 4vw, 1.75rem) 1.75rem;
+  overflow-y: auto;
+  max-height: calc(min(85vh, 52rem) - 4rem);
+}
+
+.modal__foot {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ── tutorial content ───────────────────────────────────── */
+.steps {
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 1.4rem;
+}
+
+.steps > li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 1.9rem 1fr;
+  gap: 0.9rem;
+  color: var(--ink-2);
+}
+
+.steps > li::before {
+  content: counter(step);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.9rem;
+  text-align: center;
+  color: var(--pos);
+  background: var(--pos-wash);
+  border-radius: 50%;
+  height: 1.9rem;
+}
+
+.steps h3 {
+  font-size: 0.98rem;
+  color: var(--ink);
+  margin-bottom: 0.2rem;
+}
+
+.steps p { margin: 0; }
+.steps p + p { margin-top: 0.4rem; }
+
+.panels {
+  margin-top: 2.25rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.panels > div {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+}
+
+.panels dt {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.panels dd { color: var(--ink-2); font-size: 0.95rem; }
+
+@media (max-width: 34rem) {
+  .panels > div { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* ── skills ─────────────────────────────────────────────── */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.tags li {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  background: var(--pos-wash);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.7rem;
+}
+
+/* ── contact ────────────────────────────────────────────── */
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.contact a {
+  color: var(--pos);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.contact a:hover { border-bottom-color: currentColor; }
+
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
