@@ -137,11 +137,27 @@ function selectOp(name, { announce = true } = {}) {
     : `${name.toUpperCase()} selected — press Add or drag it onto the circuit.`);
 }
 
-/* index === null appends; otherwise the op is inserted at that column */
-function addOp(name, index = null) {
+/* Arguments for a placement. `wire` is the qubit a drop landed on: it wins over
+ * the selector, because pointing at the line you want is the whole idea. */
+function argsFor(name, wire = null) {
   const spec = OPS[name];
-  const a = spec.args.length >= 1 ? Number(el.argA.value) : -1;
-  const b = spec.args.length >= 2 ? Number(el.argB.value) : -1;
+  let a = spec.args.length >= 1 ? Number(el.argA.value) : -1;
+  let b = spec.args.length >= 2 ? Number(el.argB.value) : -1;
+
+  if (wire === null || spec.span) return { a, b };   // oracle/diffuser span every wire
+
+  if (name === 'cnot') {
+    b = wire;                                        // dropped wire is the ⊕ target
+    if (a === b) a = (b + 1) % model.qubits;         // control has to sit elsewhere
+  } else {
+    a = wire;
+  }
+  return { a, b };
+}
+
+/* index === null appends; otherwise the op is inserted at that column */
+function addOp(name, index = null, wire = null) {
+  const { a, b } = argsFor(name, wire);
 
   if (name === 'cnot' && a === b) {
     setStatus('CNOT needs distinct control and target qubits.', 'error');
@@ -149,9 +165,35 @@ function addOp(name, index = null) {
   }
   const at = index === null ? model.ops.length : Math.max(0, Math.min(index, model.ops.length));
   model.ops.splice(at, 0, { name, a, b });
+  syncArgSelectors(name, a, b);
   drawCircuit();
-  setStatus(`${index === null ? 'Added' : `Inserted at position ${at + 1}:`} ${name.toUpperCase()} — ` +
-            `${model.ops.length} op(s) queued. Press Compile & run.`);
+
+  const where = index === null ? 'Added' : `Inserted at position ${at + 1}:`;
+  const on = OPS[name].span ? '' : name === 'cnot' ? ` q${a}→q${b}` : ` on q${a}`;
+  setStatus(`${where} ${name.toUpperCase()}${on} — ${model.ops.length} op(s) queued. Press Compile & run.`);
+}
+
+/* keep the selectors showing what was just placed, so Add repeats it */
+function syncArgSelectors(name, a, b) {
+  const spec = OPS[name];
+  if (spec.args.length >= 1 && a >= 0) el.argA.value = String(a);
+  if (spec.args.length >= 2 && b >= 0) el.argB.value = String(b);
+}
+
+/* Move a placed op to another column and/or another wire. */
+function moveOp(from, toColumn, wire) {
+  const op = model.ops[from];
+  if (!op) return;
+  const { a, b } = argsFor(op.name, wire);
+  if (op.name === 'cnot' && a === b) return;
+
+  model.ops.splice(from, 1);
+  const to = Math.max(0, Math.min(toColumn, model.ops.length));
+  model.ops.splice(to, 0, { ...op, a, b });
+  drawCircuit();
+
+  const on = OPS[op.name].span ? '' : op.name === 'cnot' ? ` q${a}→q${b}` : ` on q${a}`;
+  setStatus(`Moved ${op.name.toUpperCase()} to position ${to + 1}${on}. Press Compile & run.`);
 }
 
 function drawCircuit() {
@@ -179,12 +221,19 @@ function drawCircuit() {
   el.circuit._xOf = xOf;
   el.circuit._colW = colW;
   el.circuit._padL = padL;
+  el.circuit._padT = padT;
+  el.circuit._rowH = rowH;
+  el.circuit._yOf = yOf;
 
-  // where a dragged gate would land; only visible mid-drag
+  // where a dragged gate would land: which wire, and which column
+  const rowHi = svg('rect', {
+    class: 'drop-row', x: 2, y: 0, width: width - 4, height: rowH, rx: 4, opacity: 0,
+  });
   const marker = svg('line', {
     class: 'drop-marker', x1: 0, y1: padT - 6, x2: 0, y2: padT + n * rowH + 6, opacity: 0,
   });
-  el.circuit.append(marker);
+  el.circuit.append(rowHi, marker);
+  el.circuit._rowHi = rowHi;
   el.circuit._marker = marker;
 
   for (let q = 0; q < n; q++) {
@@ -203,11 +252,8 @@ function drawCircuit() {
   model.ops.forEach((op, k) => {
     const spec = OPS[op.name];
     const g = svg('g', { class: 'gate-g', 'data-index': k });
-    g.addEventListener('click', () => {
-      model.ops.splice(k, 1);
-      drawCircuit();
-      setStatus(`Removed op #${k + 1}. Press Compile & run.`);
-    });
+    // press and move to reposition it; press and release without moving removes it
+    g.addEventListener('pointerdown', (e) => beginGateDrag(e, k, g));
 
     const x = xOf(k), w = 28;
 
@@ -733,6 +779,7 @@ el.add.addEventListener('click', () => {
  * shortcut, never the only way in: Add does the same job from the keyboard. */
 
 let dropIndex = null;
+let dropWire = null;
 
 el.palette.addEventListener('dragstart', (e) => {
   const btn = e.target.closest('.gate-btn');
@@ -748,51 +795,129 @@ el.palette.addEventListener('dragend', () => {
   hideDropMarker();
 });
 
-function columnAt(clientX) {
+/* pointer position -> circuit coordinates. The viewBox is 1:1 with the layout
+ * box until the panel squeezes it, so scale rather than assume. */
+function circuitPoint(clientX, clientY) {
   const box = el.circuit.getBoundingClientRect();
-  if (!box.width) return model.ops.length;
-  // the viewBox is 1:1 with the layout box unless the panel squeezes it
-  const scale = el.circuit.viewBox.baseVal.width / box.width;
-  const x = (clientX - box.left) * scale;
-  const k = Math.round((x - el.circuit._padL) / el.circuit._colW);
+  if (!box.width || !box.height) return null;
+  return {
+    x: (clientX - box.left) * (el.circuit.viewBox.baseVal.width / box.width),
+    y: (clientY - box.top) * (el.circuit.viewBox.baseVal.height / box.height),
+  };
+}
+
+function columnAt(clientX, clientY) {
+  const p = circuitPoint(clientX, clientY);
+  if (!p) return model.ops.length;
+  // the index is a gap between columns; dropping onto a gate's own centre takes
+  // that gate's place and pushes it right, so the tie breaks left
+  const k = Math.ceil((p.x - el.circuit._padL) / el.circuit._colW - 0.5);
   return Math.max(0, Math.min(k, model.ops.length));
 }
 
-function showDropMarker(k) {
-  const m = el.circuit._marker;
-  if (!m) return;
+/* which wire the pointer is over — this is the target qubit */
+function wireAt(clientX, clientY) {
+  const p = circuitPoint(clientX, clientY);
+  if (!p) return 0;
+  const q = Math.floor((p.y - el.circuit._padT) / el.circuit._rowH);
+  return Math.max(0, Math.min(q, model.qubits - 1));
+}
+
+function showDropHint(k, wire, spanned) {
+  const m = el.circuit._marker, row = el.circuit._rowHi;
+  if (!m || !row) return;
   const x = el.circuit._padL + k * el.circuit._colW;
   m.setAttribute('x1', x);
   m.setAttribute('x2', x);
   m.setAttribute('opacity', 1);
-  el.circuit.appendChild(m);   // keep it above the gates
+
+  // oracle and diffuser cover every wire, so highlighting one would lie
+  if (spanned) {
+    row.setAttribute('opacity', 0);
+  } else {
+    row.setAttribute('y', el.circuit._padT + wire * el.circuit._rowH);
+    row.setAttribute('opacity', 1);
+  }
+  el.circuit.appendChild(row);
+  el.circuit.appendChild(m);   // keep both above the gates
 }
 
-function hideDropMarker() {
+function hideDropHint() {
   dropIndex = null;
+  dropWire = null;
   el.circuit._marker?.setAttribute('opacity', 0);
+  el.circuit._rowHi?.setAttribute('opacity', 0);
 }
 
 el.circuitDrop.addEventListener('dragover', (e) => {
   if (!pendingOp) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'copy';
-  dropIndex = columnAt(e.clientX);
-  showDropMarker(dropIndex);
+  dropIndex = columnAt(e.clientX, e.clientY);
+  dropWire = wireAt(e.clientX, e.clientY);
+  showDropHint(dropIndex, dropWire, OPS[pendingOp].span);
 });
 
 el.circuitDrop.addEventListener('dragleave', (e) => {
-  if (!el.circuitDrop.contains(e.relatedTarget)) hideDropMarker();
+  if (!el.circuitDrop.contains(e.relatedTarget)) hideDropHint();
 });
 
 el.circuitDrop.addEventListener('drop', (e) => {
   e.preventDefault();
   const name = e.dataTransfer.getData('text/plain') || pendingOp;
-  const at = dropIndex ?? columnAt(e.clientX);
-  hideDropMarker();
+  const at = dropIndex ?? columnAt(e.clientX, e.clientY);
+  const wire = dropWire ?? wireAt(e.clientX, e.clientY);
+  hideDropHint();
   el.circuitDrop.classList.remove('is-target');
-  if (name in OPS) addOp(name, at);
+  if (name in OPS) addOp(name, at, wire);
 });
+
+/* ── move a gate that is already on the circuit ─────────────────
+ * Pointer events rather than HTML5 drag: they work on touch, and they let a
+ * press-without-moving still mean "remove this one". */
+
+let gateDrag = null;
+
+function beginGateDrag(e, index, g) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  gateDrag = { index, g, x0: e.clientX, y0: e.clientY, moved: false, pointerId: e.pointerId };
+  g.classList.add('is-dragging');
+  window.addEventListener('pointermove', onGateDragMove);
+  window.addEventListener('pointerup', onGateDragEnd);
+  window.addEventListener('pointercancel', onGateDragEnd);
+}
+
+function onGateDragMove(e) {
+  if (!gateDrag) return;
+  if (!gateDrag.moved &&
+      Math.hypot(e.clientX - gateDrag.x0, e.clientY - gateDrag.y0) < 4) return;
+  gateDrag.moved = true;
+  const op = model.ops[gateDrag.index];
+  showDropHint(columnAt(e.clientX, e.clientY), wireAt(e.clientX, e.clientY), OPS[op.name].span);
+}
+
+function onGateDragEnd(e) {
+  if (!gateDrag) return;
+  const { index, moved, g } = gateDrag;
+  g.classList.remove('is-dragging');
+  window.removeEventListener('pointermove', onGateDragMove);
+  window.removeEventListener('pointerup', onGateDragEnd);
+  window.removeEventListener('pointercancel', onGateDragEnd);
+  gateDrag = null;
+
+  if (!moved) {
+    hideDropHint();
+    model.ops.splice(index, 1);
+    drawCircuit();
+    setStatus(`Removed op #${index + 1}. Press Compile & run.`);
+    return;
+  }
+  const to = columnAt(e.clientX, e.clientY);
+  const wire = wireAt(e.clientX, e.clientY);
+  hideDropHint();
+  moveOp(index, to, wire);
+}
 
 el.qubits.addEventListener('change', () => {
   model.qubits = Number(el.qubits.value);

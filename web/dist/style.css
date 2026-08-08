@@ -355,6 +355,25 @@ kbd {
   pointer-events: none;
 }
 
+/* the wire a drop would land on — this is what picks the target qubit */
+.drop-row {
+  fill: var(--pos-wash);
+  stroke: var(--pos);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* placed gates can be picked up and moved to another wire or column */
+.gate-g { cursor: grab; }
+.gate-g.is-dragging { opacity: 0.35; cursor: grabbing; }
+
+.circuit {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;   /* a drag on the circuit must not scroll the panel */
+}
+
 .palette__args { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .palette__args select { padding: 3px 6px; font-family: var(--mono); }
 

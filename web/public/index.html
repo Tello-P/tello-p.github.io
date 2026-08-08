@@ -101,7 +101,7 @@
       <div class="circuit-scroll" id="circuit-drop">
         <svg id="circuit" class="circuit" role="img" aria-label="Quantum circuit diagram"></svg>
       </div>
-      <p class="hint" id="circuit-hint">Pick a gate, set its targets, then press <kbd>Add</kbd> — or drag the gate onto the circuit to drop it at a position. Click a placed gate to remove it.</p>
+      <p class="hint" id="circuit-hint">Pick a gate, set its targets, then press <kbd>Add</kbd> — or drag it onto a wire: the wire is the target, the column is the position. Drag a placed gate to move it; click it to remove it.</p>
     </div>
   </section>
 
@@ -205,10 +205,17 @@
             <strong>Three:</strong> press <kbd>Add</kbd> to put it at the end.
           </p>
           <p>
-            Or skip the last step and <strong>drag the gate straight onto the circuit</strong>.
-            A dashed marker shows where it will land, so you can drop it between two gates
-            that are already there instead of only at the end. Clicking a gate already on the
-            wire removes it.
+            Or skip the selectors entirely and <strong>drag the gate onto the wire you want
+            it to act on</strong>. The wire you drop on becomes the target, and the column
+            decides the position — so a gate can go between two that are already there, not
+            only at the end. A dashed marker and a highlighted wire show exactly where it
+            will land. For CNOT the drop sets the ⊕ target and the control moves out of the
+            way; Oracle and Diffuser span every wire, so only the column matters.
+          </p>
+          <p>
+            Gates already on the circuit can be <strong>picked up and moved</strong> the same
+            way — drag one to another wire or another column. Press and release without
+            moving to remove it.
           </p>
         </div>
       </li>
