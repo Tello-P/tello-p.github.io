@@ -1,103 +1,306 @@
-<!DOCTYPE html>
-<html lang="es">
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mi Página Básica</title>
-    <style>
-        /* Estilos generales / Reseteo básico */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tello Perez Garrote — Software Engineering student</title>
+<meta name="description" content="Tello Perez Garrote — Software Engineering student. Low-level C, embedded systems and WebAssembly. Home of the Embedded Qubit Engine.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
+<style>
+/* Palette shared with the Embedded Qubit Engine debugger (web/dist/style.css).
+   Light is the base definition; the dark block redefines only the tokens. */
+:root {
+  color-scheme: light;
 
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f9;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
+  --plane:     #f9f9f7;
+  --surface:   #fcfcfb;
+  --surface-2: #f0efec;
 
-        /* Encabezado */
-        header {
-            background-color: #1e1e24;
-            color: #ffffff;
-            padding: 1.5rem;
-            text-align: center;
-        }
+  --ink:       #0b0b0b;
+  --ink-2:     #52514e;
+  --muted:     #898781;
 
-        /* Contenedor principal */
-        main {
-            max-width: 800px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-            flex: 1;
-        }
+  --rule:      #c3c2b7;
+  --border:    rgba(11, 11, 11, 0.10);
 
-        /* Tarjeta de contenido */
-        .card {
-            background: #ffffff;
-            border-radius: 8px;
-            padding: 2rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
+  --pos:       #2a78d6;
+  --accent:    #fab219;
+  --pos-wash:  rgba(42, 120, 214, 0.12);
 
-        .card h2 {
-            color: #2b2d42;
-            margin-bottom: 1rem;
-        }
+  --radius:    10px;
+  --radius-sm: 6px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
 
-        .card p {
-            margin-bottom: 1.5rem;
-        }
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --plane:     #0d0d0d;
+    --surface:   #1a1a19;
+    --surface-2: #222220;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --muted:     #898781;
+    --rule:      #383835;
+    --border:    rgba(255, 255, 255, 0.10);
+    --pos:       #3987e5;
+    --pos-wash:  rgba(57, 135, 229, 0.16);
+  }
+}
 
-        /* Botón de acción */
-        .btn {
-            display: inline-block;
-            background-color: #2563eb;
-            color: #ffffff;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: background-color 0.2s ease;
-        }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .btn:hover {
-            background-color: #1d4ed8;
-        }
+body {
+  font-family: var(--sans);
+  background: var(--plane);
+  color: var(--ink);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
 
-        /* Pie de página */
-        footer {
-            background-color: #e2e8f0;
-            text-align: center;
-            padding: 1rem;
-            font-size: 0.875rem;
-            color: #64748b;
-        }
-    </style>
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 8vw, 5rem) 1.25rem 4rem;
+}
+
+/* ── intro ──────────────────────────────────────────────── */
+.intro__mark {
+  font-size: 1.6rem;
+  color: var(--pos);
+  line-height: 1;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 6vw, 2.6rem);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.role {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+
+.lede {
+  margin-top: 1.5rem;
+  font-size: 1.05rem;
+  color: var(--ink-2);
+  max-width: 40rem;
+}
+
+/* ── sections ───────────────────────────────────────────── */
+section { margin-top: 3.25rem; }
+
+h2 {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+/* ── project card ───────────────────────────────────────── */
+.project {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: clamp(1.25rem, 4vw, 1.9rem);
+}
+
+.project h3 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.15rem;
+}
+
+.project__sub {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 1.1rem;
+}
+
+.project p { color: var(--ink-2); margin-bottom: 1rem; }
+.project p:last-of-type { margin-bottom: 1.5rem; }
+
+.project strong { color: var(--ink); font-weight: 600; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.87em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-decoration: none;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  background: var(--surface-2);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover { border-color: var(--rule); }
+
+.btn--primary {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: #ffffff;
+}
+
+.btn--primary:hover { filter: brightness(1.08); border-color: var(--pos); }
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── skills ─────────────────────────────────────────────── */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.tags li {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  background: var(--pos-wash);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.7rem;
+}
+
+/* ── contact ────────────────────────────────────────────── */
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.contact a {
+  color: var(--pos);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.contact a:hover { border-bottom-color: currentColor; }
+
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+</style>
 </head>
 <body>
 
-    <header>
-        <h1>Mi Sitio Web</h1>
-    </header>
+<div class="wrap">
 
-    <main>
-        <section class="card">
-            <h2>¡Hola, mundo!</h2>
-            <p>Este es un ejemplo de estructura HTML5 básica estilizada con CSS sin dependencias externas.</p>
-            <a href="#" class="btn">Acción</a>
-        </section>
-    </main>
+  <header class="intro">
+    <div class="intro__mark" aria-hidden="true">◈</div>
+    <h1>Tello Perez Garrote</h1>
+    <p class="role">Software Engineering student</p>
+    <p class="lede">
+      I like working close to the metal — C, embedded targets and the maths that has to
+      fit inside 2&nbsp;KB of RAM. Most of what I build starts as a question of
+      "how small can this actually get?"
+    </p>
+  </header>
 
-    <footer>
-        <p>&copy; 2026 Mi Sitio Web. Todos los derechos reservados.</p>
-    </footer>
+  <section aria-labelledby="h-project">
+    <h2 id="h-project">Project</h2>
+
+    <article class="project">
+      <h3>Embedded Qubit Engine</h3>
+      <p class="project__sub">Q1.14 fixed-point quantum simulator in C · AVR / Arduino · WebAssembly debugger</p>
+
+      <p>
+        A quantum state simulator written in plain C for microcontrollers. Instead of
+        floating-point maths, every amplitude is stored as a <strong>Q1.14 fixed-point
+        complex number</strong> — two <code>int16_t</code> values — so a multi-qubit
+        register fits in a few hundred bytes and runs on an 8-bit AVR with no FPU.
+      </p>
+
+      <p>
+        The core implements the usual building blocks: Hadamard, Pauli-X, Pauli-Z and
+        CNOT gates, a Grover oracle and diffuser, and measurement that collapses the
+        register using a seeded RNG. The same source is compiled twice — once with
+        <code>avr-gcc</code> for the Arduino sketch, once with GCC for the host test
+        suite — so results can be compared between the two.
+      </p>
+
+      <p>
+        The live demo compiles that C core to <strong>WebAssembly</strong> and wraps it
+        in a trace debugger. You build a circuit gate by gate, run it, then scrub
+        through the execution step by step: the state vector, the Bloch sphere of each
+        qubit and the exact line of C being executed all move together. It is the same
+        code that runs on the microcontroller, just instrumented.
+      </p>
+
+      <div class="actions">
+        <a class="btn btn--primary" href="./web/dist/">▸ Open the live demo</a>
+        <a class="btn" href="https://github.com/Tello-P/tello-p.github.io">Source on GitHub</a>
+      </div>
+    </article>
+  </section>
+
+  <section aria-labelledby="h-skills">
+    <h2 id="h-skills">Working with</h2>
+    <ul class="tags">
+      <li>C</li>
+      <li>C++</li>
+      <li>Embedded / AVR</li>
+      <li>Fixed-point maths</li>
+      <li>WebAssembly</li>
+      <li>JavaScript</li>
+      <li>Make</li>
+      <li>Git</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-contact">
+    <h2 id="h-contact">Contact</h2>
+    <div class="contact">
+      <span><a href="https://github.com/Tello-P">github.com/Tello-P</a></span>
+      <span><a href="mailto:perezgarrote.tello@gmail.com">perezgarrote.tello@gmail.com</a></span>
+    </div>
+  </section>
+
+  <footer>
+    <p>© 2026 Tello Perez Garrote</p>
+  </footer>
+
+</div>
 
 </body>
 </html>
