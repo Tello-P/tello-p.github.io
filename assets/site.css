@@ -61,12 +61,6 @@ body {
 }
 
 /* ── intro ──────────────────────────────────────────────── */
-.intro__mark {
-  font-size: 1.6rem;
-  color: var(--pos);
-  line-height: 1;
-}
-
 h1 {
   font-size: clamp(1.9rem, 6vw, 2.6rem);
   letter-spacing: -0.02em;
@@ -316,18 +310,28 @@ kbd {
   outline-offset: 2px;
 }
 
-/* ── back link ──────────────────────────────────────────── */
-.back {
-  display: inline-flex;
+/* ── site header ────────────────────────────────────────── */
+.topbar { border-bottom: 1px solid var(--border); }
+
+.topbar__inner {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem;
+  display: flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: space-between;
+  gap: 1rem;
   font-family: var(--mono);
-  font-size: 0.8rem;
-  color: var(--muted);
-  text-decoration: none;
+  font-size: 0.78rem;
 }
 
-.back:hover { color: var(--ink-2); }
+.topbar a { color: var(--muted); text-decoration: none; }
+.topbar a:hover { color: var(--ink); }
+
+.topbar__home { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--ink-2); }
+.topbar__home .mark { color: var(--pos); font-size: 1rem; line-height: 1; }
+
+.topbar__nav { display: flex; gap: 1.1rem; }
 
 /* ── skills ─────────────────────────────────────────────── */
 .tags {
@@ -364,6 +368,7 @@ kbd {
 
 .btn:hover .btn__icon { color: var(--ink); }
 
+/* ── site footer ────────────────────────────────────────── */
 footer {
   margin-top: 3.5rem;
   padding-top: 1.25rem;
@@ -371,4 +376,13 @@ footer {
   font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  justify-content: space-between;
 }
+
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--ink); }
+
+.foot-nav { display: flex; gap: 1.1rem; }
