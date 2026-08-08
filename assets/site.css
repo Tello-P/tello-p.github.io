@@ -1,5 +1,5 @@
 /* Site-wide styles for tello-p.github.io.
-   Palette shared with the Embedded Qubit Engine debugger (web/dist/style.css).
+   Palette shared with the Embedded Qubit Engine debugger (projects/embedded-qubit-engine/demo/style.css).
    Light is the base definition; the dark block redefines only the tokens. */
 :root {
   color-scheme: light;

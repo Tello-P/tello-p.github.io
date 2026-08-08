@@ -1,9 +1,9 @@
 /* Proves the WebAssembly build and the native gcc build of the core produce
  * byte-identical traces.
  *
- *   node web/tools/check-parity.mjs
+ *   node engine/web/tools/check-parity.mjs
  *
- * Expects web/build/qtrace (native) and web/dist/qcore.js (wasm) to exist —
+ * Expects web/build/qtrace (native) and ../demo/qcore.js (wasm) to exist —
  * `make web-dist` builds both. Exits non-zero on any divergence.
  */
 
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const NATIVE = path.join(ROOT, 'web/build/qtrace');
-const WASM = path.join(ROOT, 'web/dist/qcore.js');
+const WASM = path.resolve(ROOT, '../demo/qcore.js');
 
 const PROGRAMS = [
   ['bell + measure',      'qubits 2\nmode step\nop h 0\nop cnot 0 1\nop measure 0\nrun\n'],

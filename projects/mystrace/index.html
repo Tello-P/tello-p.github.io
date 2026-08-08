@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyStrace — Tello Perez Garrote</title>
+<meta name="description" content="An engineering write-up of MyStrace, a ptrace-based system call tracer I implemented in C11 for x86_64 Linux.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
+<link rel="stylesheet" href="./page.css">
+<script src="./page.js" defer></script>
+</head>
+<body>
+
+<header class="wrap">
+  <a class="back" href="../../">← Tello Perez Garrote</a>
+
+  <div class="masthead">
+    <div class="kicker"><span class="rule"></span>mystrace &nbsp;·&nbsp; system call tracer &nbsp;·&nbsp; x86_64 linux</div>
+    <h1>MyStrace</h1>
+    <p class="tagline">A system call tracer for x86_64 Linux, written from scratch in C.</p>
+    <p class="lede">No program opens a file, writes to a screen or allocates memory on its own
+      authority. It asks. MyStrace places itself inside that exchange, halts the traced process at
+      every request, reads the CPU registers directly and transcribes what was asked and what
+      came back.</p>
+    <div class="byline">
+      <span>C11, no external dependencies</span>
+      <span>ptrace(2) · System V AMD64 ABI</span>
+      <span><a href="https://github.com/Tello-P/strace-in-c">github.com/Tello-P/strace-in-c</a></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- DEMO ─────────────────────────────────────────── -->
+<section id="demo" class="section--lead" aria-labelledby="h-demo">
+  <h2 id="h-demo" hidden>A captured trace</h2>
+  <div class="stack">
+    <div class="term">
+      <div class="term-bar">
+        <div class="term-cmd">$ <b>mystrace /bin/echo hola</b></div>
+        <div class="ctrls">
+          <button id="play" type="button">Pause</button>
+          <button id="speed" type="button">1&times;</button>
+          <button id="restart" type="button">Restart</button>
+        </div>
+      </div>
+      <div class="term-body">
+        <div class="term-out" id="out" role="log" aria-live="polite" aria-label="mystrace output"></div>
+        <aside class="term-side" id="side">
+          <div class="side-tag">Captured trace</div>
+          <div class="side-body">This is the verbatim output of <code>mystrace /bin/echo hola</code>
+            on an x86_64 Linux machine, replayed at the pace it was produced. Select any line to
+            read what the program was asking for at that moment.</div>
+        </aside>
+      </div>
+    </div>
+    <p class="col caption">
+      Printing four characters costs 63 system calls. The first forty belong to no code that
+      <code>echo</code> ever wrote: they are the dynamic linker locating and mapping the C library
+      before <code>main</code> is reached. Making that visible was the point of the exercise.</p>
+  </div>
+</section>
+
+<!-- BOUNDARY ─────────────────────────────────────── -->
+<section aria-labelledby="h-boundary">
+  <div class="stack">
+    <div class="eyebrow">The privilege boundary</div>
+    <div class="col stack-s">
+      <h2 id="h-boundary">Two address spaces and one door between them</h2>
+      <p>A process runs in user space under deliberate isolation: it cannot reach the disk, the
+        network, or another process's memory. The kernel can. The only crossing is the
+        <code>syscall</code> instruction, which traps into kernel mode carrying a service number
+        in <code>orig_rax</code>.</p>
+      <p>I used <code>ptrace(2)</code> to ask the kernel to suspend the traced process precisely at
+        that door — on the way in and on the way out — and to expose its register file to the
+        tracer while it is stopped.</p>
+    </div>
+
+    <div class="boundary">
+      <div class="zone">
+        <div class="zone-label">User space</div>
+        <div class="box"><b>tracee</b><span>/bin/echo — runs freely until it<br>reaches a syscall instruction</span></div>
+        <div class="box"><b>tracer</b><span>mystrace — blocked in waitpid(),<br>holding no CPU while it waits</span></div>
+      </div>
+      <div class="membrane" aria-hidden="true"></div>
+      <div class="zone zone--kernel">
+        <div class="zone-label">Kernel space</div>
+        <div class="box"><b>suspends the tracee</b><span>on syscall entry and again<br>on syscall exit</span></div>
+        <div class="box"><b>wakes the tracer</b><span>and exposes user_regs_struct<br>through PTRACE_GETREGS</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CYCLE ────────────────────────────────────────── -->
+<section aria-labelledby="h-cycle">
+  <div class="stack">
+    <div class="eyebrow">The entry / exit cycle</div>
+    <div class="col stack-s">
+      <h2 id="h-cycle">Every system call stops twice, and the difference matters</h2>
+      <p>Arguments exist only at the first stop; the return value exists only at the second. The
+        tracer therefore runs as a two-state machine, alternating an <code>entry</code> flag so
+        that each stop is interpreted against the correct half of the call. The four stages below
+        follow the control loop across one real <code>openat</code> from the trace above.</p>
+    </div>
+
+    <div class="stepper">
+      <div class="steps" id="steps" role="tablist" aria-label="Control loop stages"></div>
+      <div class="stage" id="stage" role="tabpanel" tabindex="0">
+        <p class="stage-note" id="stageNote"></p>
+        <div class="scroll-x">
+          <table class="regs">
+            <thead><tr><th>Register</th><th>Value</th><th>Meaning</th></tr></thead>
+            <tbody id="regs"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <p class="col note-rule">The ordering of these stages was the hardest defect I resolved. My
+      first control loop read the registers immediately after resuming the tracee, which sampled a
+      register file the kernel had not yet refreshed — producing stale values and duplicated
+      lines. Enforcing <em>resume, wait, validate, then sample</em> eliminated the race entirely.</p>
+  </div>
+</section>
+
+<!-- PEEK ─────────────────────────────────────────── -->
+<section aria-labelledby="h-peek">
+  <div class="stack">
+    <div class="eyebrow">Reading the tracee's memory</div>
+    <div class="col stack-s">
+      <h2 id="h-peek">A register holds an address, not a filename</h2>
+      <p>At the <code>openat</code> entry stop, <code>rsi</code> reads
+        <code>0x7ffd4a2b1e40</code>. On its own that value is meaningless: the path itself lives in
+        another process's address space. <code>PTRACE_PEEKDATA</code> retrieves it, but only one
+        machine word — eight bytes on x86_64 — per call.</p>
+      <p>I implemented <code>read_data()</code> to issue those word-aligned reads in sequence,
+        reinterpret each returned <code>long</code> as bytes, and terminate as soon as a
+        <code>NUL</code> appears, so that no read runs past the end of the string.</p>
+    </div>
+    <div class="stack-s">
+      <div class="words" id="words"></div>
+      <div class="assembled" id="assembled">&nbsp;</div>
+      <div><button class="btn-ghost" id="peekAgain" type="button">Replay the read</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ANATOMY ──────────────────────────────────────── -->
+<section aria-labelledby="h-anatomy">
+  <div class="stack">
+    <div class="eyebrow">Reading the output</div>
+    <h2 class="col" id="h-anatomy">Anatomy of a traced line</h2>
+    <div class="anno">
+      <div class="anno-line">Syscall: <u>openat</u>          (ID: <u>257</u>)  | Result: <u>0x3</u></div>
+      <div class="anno-keys">
+        <div><b>openat</b> — the name resolved through the lookup table I generated in
+          <code>syscall_names_x86_64.h</code>.</div>
+        <div><b>257</b> — the number carried in <code>orig_rax</code>. This is the real identifier;
+          the name is presentation.</div>
+        <div><b>0x3</b> — the value of <code>rax</code> at the exit stop. Here, the file descriptor
+          just allocated.</div>
+      </div>
+    </div>
+    <p class="col note-rule">When <code>rax</code> falls between <code>-1</code> and
+      <code>-4095</code> it is not a result but a negated <code>errno</code>, and the line is
+      reported as <span class="err-inline">ERROR (-2)</span>. That <code>-2</code> is
+      <code>ENOENT</code>. It appears on the <code>access</code> call in the trace above — the
+      linker probing a path that does not exist.</p>
+  </div>
+</section>
+
+<!-- MODES ────────────────────────────────────────── -->
+<section aria-labelledby="h-modes">
+  <div class="stack">
+    <div class="eyebrow">Attachment modes</div>
+    <h2 class="col" id="h-modes">Two ways to acquire a target</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Spawning the process</h3>
+        <p>The forked child marks itself with <code>PTRACE_TRACEME</code> and calls
+          <code>execvp</code>. The kernel stops it on the first instruction of the new image, which
+          leaves a window to set <code>PTRACE_O_TRACESYSGOOD</code> before a single system call has
+          run — so nothing is missed.</p>
+        <pre><span class="p">$</span> mystrace /bin/ls -la</pre>
+      </div>
+      <div class="card">
+        <h3>Attaching to a running process</h3>
+        <p><code>PTRACE_ATTACH</code> delivers a <code>SIGSTOP</code> to the target, which the
+          tracer must acknowledge through <code>waitpid</code> before entering the loop. On exit,
+          an explicit <code>PTRACE_DETACH</code> restores the process to its original state.</p>
+        <pre><span class="p">$</span> mystrace <span class="f">-p</span> 4821
+<span class="p">$</span> mystrace <span class="f">--pid</span> 4821</pre>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Signal transparency</h3>
+        <p>Because the tracer intercepts signals destined for the tracee, an unhandled
+          <code>Ctrl+C</code> would terminate the tracer and strand the child. I forward the
+          pending signal through the third argument of <code>PTRACE_SYSCALL</code>, so the traced
+          process observes the interrupt exactly as it would untraced.</p>
+      </div>
+      <div class="card">
+        <h3>Kernel-side permissions</h3>
+        <p>Attaching to a process I did not spawn is additionally governed by the Yama security
+          module. With <code>/proc/sys/kernel/yama/ptrace_scope</code> set to <code>1</code> — the
+          default on most distributions — only a direct descendant may be traced, and any other
+          target requires <code>CAP_SYS_PTRACE</code> or <code>sudo</code>.</p>
+        <pre><span class="p">$</span> cat /proc/sys/kernel/yama/ptrace_scope</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL ──────────────────────────────────────── -->
+<section id="install" aria-labelledby="h-install">
+  <div class="stack">
+    <div class="eyebrow">Installation and usage</div>
+    <div class="col stack-s">
+      <h2 id="h-install">Getting it running</h2>
+      <p>The tracer has no dependencies beyond a C compiler and the Linux headers. Clone the
+        repository, build it, and either run it in place or install it onto your path.</p>
+    </div>
+
+    <div class="steps-doc">
+      <div class="doc-step">
+        <div class="doc-n">1</div>
+        <div class="doc-c">
+          <h3>Clone the repository</h3>
+          <pre><span class="p">$</span> git clone https://github.com/Tello-P/strace-in-c.git
+<span class="p">$</span> cd strace-in-c</pre>
+        </div>
+      </div>
+
+      <div class="doc-step">
+        <div class="doc-n">2</div>
+        <div class="doc-c">
+          <h3>Build</h3>
+          <pre><span class="p">$</span> make</pre>
+          <p>Compiles under <code>-Wall -Wextra -Werror</code> and produces the binary at
+            <code>bin/mystrace</code>. That is already runnable — installation is optional.</p>
+        </div>
+      </div>
+
+      <div class="doc-step">
+        <div class="doc-n">3</div>
+        <div class="doc-c">
+          <h3>Install onto your path</h3>
+          <pre><span class="p">$</span> sudo make install</pre>
+          <p>Copies the binary to <code>/usr/local/bin/mystrace</code>, so it can be invoked from
+            anywhere. Override the destination with <code>PREFIX</code>, and reverse the operation
+            with <code>sudo make uninstall</code>.</p>
+        </div>
+      </div>
+
+      <div class="doc-step">
+        <div class="doc-n">4</div>
+        <div class="doc-c">
+          <h3>Trace something</h3>
+          <pre><span class="p">#</span> <span class="c">trace a command you launch</span>
+<span class="p">$</span> mystrace /bin/ls -la
+
+<span class="p">#</span> <span class="c">attach to a process already running</span>
+<span class="p">$</span> mystrace <span class="f">-p</span> 4821
+
+<span class="p">#</span> <span class="c">usage summary</span>
+<span class="p">$</span> mystrace <span class="f">--help</span></pre>
+          <p>Output goes to standard output, so it pipes and redirects like anything else:
+            <code>mystrace /bin/ls | grep openat</code>. Press <code>Ctrl+C</code> at any point to
+            detach cleanly and leave an attached process running.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="scroll-x">
+      <table class="spec">
+        <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>mystrace &lt;command&gt; [args]</code></td><td>Launches the command under
+            the tracer and reports every system call it makes, from the first instruction of the
+            new image.</td></tr>
+          <tr><td><code>mystrace -p &lt;pid&gt;</code></td><td>Attaches to a process that is
+            already running. <code>--pid</code> is accepted as the long form.</td></tr>
+          <tr><td><code>mystrace -h</code></td><td>Prints the usage summary.
+            <code>--help</code> is accepted as the long form.</td></tr>
+          <tr><td><code>make rebuild</code></td><td>Cleans and recompiles from scratch.</td></tr>
+          <tr><td><code>make clean</code></td><td>Removes the object and binary directories.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="col note-rule"><strong>Requirements:</strong> Linux on x86_64, a C11 compiler and
+      <code>make</code>. The register decoding is written against the System V AMD64 ABI, so the
+      tracer is architecture-specific by design — it will build elsewhere, but the register
+      mapping would not apply.</p>
+  </div>
+</section>
+
+<!-- IMPLEMENTATION ───────────────────────────────── -->
+<section aria-labelledby="h-impl">
+  <div class="stack">
+    <div class="eyebrow">Implementation summary</div>
+    <h2 class="col" id="h-impl">What the project required</h2>
+    <div class="scroll-x">
+      <table class="spec">
+        <thead><tr><th>Area</th><th>Approach taken</th></tr></thead>
+        <tbody>
+          <tr><td>Interception</td><td><code>PTRACE_SYSCALL</code> driving a stop at both ends of
+            every system call, with <code>PTRACE_O_TRACESYSGOOD</code> marking syscall stops as
+            <code>SIGTRAP|0x80</code> so they are distinguishable from ordinary signals.</td></tr>
+          <tr><td>Synchronisation</td><td>A strict resume → <code>waitpid</code> → validate →
+            <code>PTRACE_GETREGS</code> ordering, resolving a race that had been yielding stale
+            register reads.</td></tr>
+          <tr><td>Decoding</td><td>Register mapping per the System V AMD64 ABI:
+            <code>orig_rax</code> for the identifier, <code>rdi/rsi/rdx/r10/r8/r9</code> for
+            arguments, <code>rax</code> for the result, with negative-range detection for
+            <code>errno</code>.</td></tr>
+          <tr><td>Memory access</td><td>A word-aligned <code>PTRACE_PEEKDATA</code> reader that
+            reconstructs NUL-terminated buffers from the tracee's address space, sized to
+            <code>PATH_MAX</code>.</td></tr>
+          <tr><td>Process control</td><td>Both <code>PTRACE_TRACEME</code>/<code>execvp</code>
+            spawning and <code>PTRACE_ATTACH</code> against a live PID, with correct detach
+            semantics and signal forwarding.</td></tr>
+          <tr><td>Toolchain</td><td>C11 compiled under <code>-Wall -Wextra -Werror</code>, built by
+            a hand-written Makefile with install and uninstall targets.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <span>mystrace · C11 · ptrace(2) · x86_64 System V ABI</span>
+  <span><a href="https://github.com/Tello-P/strace-in-c">github.com/Tello-P/strace-in-c</a></span>
+</footer>
+
+</body>
+</html>

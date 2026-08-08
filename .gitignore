@@ -1,0 +1,5 @@
+# build output
+obj/
+bin/
+**/web/build/
+node_modules/

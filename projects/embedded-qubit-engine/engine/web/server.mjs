@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const PUBLIC = path.join(HERE, 'public');
 const BUILD = path.join(HERE, 'build');
-const DIST = path.join(HERE, 'dist');
+const DIST = path.resolve(ROOT, '..', 'demo');
 const BIN = path.join(BUILD, 'qtrace');
 
 const portArg = process.argv.indexOf('--port');

@@ -1,6 +1,6 @@
-/* Builds web/dist/ — a fully static site for GitHub Pages.
+/* Builds the published demo — ../../demo/, a fully static site for GitHub Pages.
  *
- *   node web/build-static.mjs
+ *   node engine/web/build-static.mjs
  *
  * Needs emscripten on PATH (`source /path/to/emsdk/emsdk_env.sh`). Output is
  * self-contained: index.html, the front-end modules, qcore.wasm compiled from
@@ -18,7 +18,8 @@ const execFileAsync = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const PUBLIC = path.join(HERE, 'public');
-const DIST = path.join(HERE, 'dist');
+/* The demo is published next to the project page, not inside the engine tree. */
+const DIST = path.resolve(ROOT, '..', 'demo');
 
 const CORE_SOURCES = ['src/fixed_point.c', 'src/quantum_core.c', 'src/quantum_register.c'];
 const ENGINE_SOURCE = 'web/engine/qtrace.c';
@@ -39,7 +40,7 @@ const SOURCE_FILES = [
 
 const EMCC_ARGS = [
   '-O2', '-Iincludes', '-DQTRACE',
-  '-o', 'web/dist/qcore.js',
+  '-o', path.relative(ROOT, path.join(DIST, 'qcore.js')),
   ENGINE_SOURCE, ...CORE_SOURCES,
   '-sMODULARIZE=1',
   '-sEXPORT_ES6=1',
@@ -93,7 +94,7 @@ async function main() {
   await fsp.writeFile(path.join(DIST, '.nojekyll'), '');
 
   console.log(`\ndist ready at ${DIST}`);
-  console.log('preview with:  npx serve web/dist   (or any static file server)');
+  console.log(`preview with:  npx serve ${path.relative(process.cwd(), DIST)}   (or any static file server)`);
 }
 
 main();

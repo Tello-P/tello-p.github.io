@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tello Perez Garrote — Software Engineering student</title>
-<meta name="description" content="Tello Perez Garrote — Software Engineering student. Low-level C, embedded systems and fixed-point maths. Home of the Embedded Qubit Engine.">
+<meta name="description" content="Tello Perez Garrote — Software Engineering student. Low-level C, embedded systems and Linux internals. Projects: the Embedded Qubit Engine and MyStrace.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
 <link rel="stylesheet" href="./assets/site.css">
 </head>
@@ -27,7 +27,7 @@
     <h2 id="h-projects">Projects</h2>
 
     <div class="cards">
-      <a class="project project--link" href="./projects/embedded-qubit-engine.html">
+      <a class="project project--link" href="./projects/embedded-qubit-engine/">
         <h3>Embedded Qubit Engine</h3>
         <p class="project__sub">Q1.14 fixed-point quantum simulator in C · AVR / Arduino · live trace debugger</p>
         <p>
@@ -36,6 +36,19 @@
           format, the multiply (in AVR assembly), the RNG and the gates are all hand-built
           on <code>int16_t</code>. Superposition, entanglement and Grover's algorithm in
           under 300 lines of C, with a live trace debugger to prove it.
+        </p>
+        <p class="project__more">Read more →</p>
+      </a>
+
+      <a class="project project--link" href="./projects/mystrace/">
+        <h3>MyStrace</h3>
+        <p class="project__sub">System call tracer in C11 · ptrace(2) · x86_64 System V ABI</p>
+        <p>
+          A <strong>reimplementation of <code>strace</code></strong> from scratch, with no
+          dependencies. It halts the traced process at both ends of every system call,
+          reads the register file directly through <code>PTRACE_GETREGS</code>, and pulls
+          path strings out of the tracee's own address space one machine word at a time.
+          Spawns a command or attaches to a live PID.
         </p>
         <p class="project__more">Read more →</p>
       </a>
@@ -49,6 +62,7 @@
       <li>C++</li>
       <li>Low-level</li>
       <li>Embedded / AVR</li>
+      <li>Linux internals</li>
       <li>Fixed-point maths</li>
       <li>JavaScript</li>
       <li>Git</li>
