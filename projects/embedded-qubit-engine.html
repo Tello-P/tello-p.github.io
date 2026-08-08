@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Embedded Qubit Engine — Tello Perez Garrote</title>
-<meta name="description" content="A Q1.14 fixed-point quantum state simulator in plain C for 8-bit microcontrollers, with a live WebAssembly trace debugger.">
+<meta name="description" content="A Q1.14 fixed-point quantum state simulator in plain C for 8-bit microcontrollers, with a live in-browser trace debugger.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
 <link rel="stylesheet" href="../assets/site.css">
 </head>
@@ -16,7 +16,7 @@
 
   <header class="intro">
     <h1>Embedded Qubit Engine</h1>
-    <p class="role">Q1.14 fixed-point quantum simulator in C · AVR / Arduino · WebAssembly debugger</p>
+    <p class="role">Q1.14 fixed-point quantum simulator in C · AVR / Arduino · live trace debugger</p>
   </header>
 
   <section aria-labelledby="h-about">
@@ -121,15 +121,16 @@
     <div class="prose">
       <p>
         The demo is not a re-implementation in JavaScript. The same C is compiled a third
-        way, to WebAssembly, and instrumented with tracing macros that compile to nothing
-        in the firmware build. You assemble a circuit, run it, and then scrub back and
+        way, to run inside the browser tab, and instrumented with tracing macros that
+        compile to nothing in the firmware build. You assemble a circuit, run it, and scrub
+        back and
         forward through the recorded execution: the raw Q1.14 state vector, the Bloch
         sphere of each qubit, and the <em>exact line of C</em> currently executing all move
         together, driven by <code>__LINE__</code> values the core itself emitted.
       </p>
 
       <p>
-        A parity check runs seven circuits through the native binary and the WebAssembly
+        A parity check runs seven circuits through the native binary and the in-browser
         build and compares the traces byte for byte, so what the browser shows is provably
         what the microcontroller does.
       </p>
@@ -201,8 +202,8 @@
           <h3>Press <kbd>Compile &amp; run</kbd></h3>
           <p>
             The C core executes and streams back a trace of everything it did. The badge next
-            to the title says which build answered — <code>WebAssembly</code> in the browser,
-            or <code>gcc</code> if you are running the local server, which recompiles the
+            to the title says which build answered — the one bundled into the page, or
+            <code>gcc</code> if you are running the local server, which recompiles the
             sources on every run.
           </p>
         </div>
