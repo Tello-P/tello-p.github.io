@@ -466,7 +466,10 @@ kbd {
 .contact .btn { padding: 0.55rem 1rem; }
 
 /* the same buttons, sitting under the intro rather than in a section */
-.contact--intro { margin-top: 1.4rem; }
+.contact--intro {
+  margin-top: 1.5rem;
+  gap: 1rem;
+}
 
 .btn__icon {
   width: 1.05rem;
