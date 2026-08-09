@@ -82,6 +82,43 @@ h1 {
   max-width: 40rem;
 }
 
+.lede strong { color: var(--ink); font-weight: 600; }
+.lede a { color: var(--pos); text-decoration: none; border-bottom: 1px solid var(--pos-wash); }
+.lede a:hover { border-bottom-color: var(--pos); }
+
+/* ── intro: name, caret, contact line ───────────────────── */
+.intro__name .w { display: inline-block; }
+
+/* the caret blinks in front of the job title, like a waiting prompt */
+.role__caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-right: 0.45em;
+  vertical-align: -0.13em;
+  background: var(--pos);
+  animation: blink 1.1s steps(1, end) infinite;
+}
+
+@keyframes blink { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.4rem;
+  list-style: none;
+  margin-top: 1.1rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.meta li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.meta a { color: var(--muted); text-decoration: none; }
+.meta a:hover { color: var(--ink); }
+
+.meta__icon { width: 0.95rem; height: 0.95rem; flex: none; color: var(--pos); }
+
 /* ── sections ───────────────────────────────────────────── */
 section { margin-top: 3.25rem; }
 
@@ -132,13 +169,15 @@ h2 {
 }
 
 .project--link h3 { color: var(--pos); }   /* the title carries the affordance */
-.project--link:hover { border-color: var(--rule); }
+.project--link:hover { border-color: var(--rule); transform: translateY(-2px); }
+.project--link:hover .project__more { color: var(--ink); }
 .project--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .project__more {
   font-family: var(--mono);
   font-size: 0.82rem;
   color: var(--pos);
+  transition: color 0.15s ease;
 }
 
 .cards { display: grid; gap: 1rem; }
@@ -262,7 +301,71 @@ kbd {
 
 @keyframes fade { to { opacity: 1; } }
 
+/* ── page entrance ──────────────────────────────────────────
+   The intro assembles itself once, top to bottom. Scoped to .js
+   so that with scripting off nothing ever starts out invisible. */
+.js .intro__name .w,
+.js .intro > .role,
+.js .intro > .meta,
+.js .intro > .lede {
+  opacity: 0;
+  animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.25, 1) forwards;
+}
+
+.js .intro__name .w:nth-child(1) { animation-delay: 0.05s; }
+.js .intro__name .w:nth-child(2) { animation-delay: 0.13s; }
+.js .intro__name .w:nth-child(3) { animation-delay: 0.21s; }
+.js .intro > .role  { animation-delay: 0.34s; }
+.js .intro > .meta  { animation-delay: 0.44s; }
+.js .intro > .lede            { animation-delay: 0.54s; }
+.js .intro > .lede ~ .lede    { animation-delay: 0.62s; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(0.7rem); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── scroll-in sections ─────────────────────────────────── */
+.js .reveal-up {
+  opacity: 0;
+  transform: translateY(1.2rem);
+  transition: opacity 0.6s ease-out, transform 0.6s cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+
+.js .reveal-up.in { opacity: 1; transform: none; }
+
+/* children arrive just behind their section */
+.js .reveal-up .project,
+.js .reveal-up .tags li,
+.js .reveal-up .contact .btn {
+  opacity: 0;
+  transform: translateY(0.6rem);
+  transition: opacity 0.5s ease-out, transform 0.5s cubic-bezier(0.2, 0.7, 0.25, 1);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+
+.js .reveal-up.in .project,
+.js .reveal-up.in .tags li,
+.js .reveal-up.in .contact .btn { opacity: 1; transform: none; }
+
+/* the card keeps its own hover transform once it has landed */
+.js .reveal-up.in .project--link { transition: border-color 0.15s ease, transform 0.15s ease; }
+
 @media (prefers-reduced-motion: reduce) {
+  .role__caret { animation: none; }
+  .js .intro__name .w,
+  .js .intro > .role,
+  .js .intro > .meta,
+  .js .intro > .lede { opacity: 1; animation: none; }
+  .js .reveal-up,
+  .js .reveal-up .project,
+  .js .reveal-up .tags li,
+  .js .reveal-up .contact .btn {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .project--link:hover { transform: none; }
   .bar--00, .bar--01, .bar--11,
   .hero-gate--h, .hero-gate--c, .hero-gate--m { animation: none; }
   /* the still frame is the Bell state: |00> and |11> at 1/sqrt(2) */
