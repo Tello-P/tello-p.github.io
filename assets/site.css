@@ -307,6 +307,7 @@ kbd {
 .js .intro__name .w,
 .js .intro > .role,
 .js .intro > .meta,
+.js .intro > .contact,
 .js .intro > .lede {
   opacity: 0;
   animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.25, 1) forwards;
@@ -316,9 +317,10 @@ kbd {
 .js .intro__name .w:nth-child(2) { animation-delay: 0.13s; }
 .js .intro__name .w:nth-child(3) { animation-delay: 0.21s; }
 .js .intro > .role  { animation-delay: 0.34s; }
-.js .intro > .meta  { animation-delay: 0.44s; }
-.js .intro > .lede            { animation-delay: 0.54s; }
-.js .intro > .lede ~ .lede    { animation-delay: 0.62s; }
+.js .intro > .meta    { animation-delay: 0.44s; }
+.js .intro > .contact { animation-delay: 0.54s; }
+.js .intro > .lede            { animation-delay: 0.64s; }
+.js .intro > .lede ~ .lede    { animation-delay: 0.72s; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(0.7rem); }
@@ -356,6 +358,7 @@ kbd {
   .js .intro__name .w,
   .js .intro > .role,
   .js .intro > .meta,
+  .js .intro > .contact,
   .js .intro > .lede { opacity: 1; animation: none; }
   .js .reveal-up,
   .js .reveal-up .project,
@@ -461,6 +464,9 @@ kbd {
 }
 
 .contact .btn { padding: 0.55rem 1rem; }
+
+/* the same buttons, sitting under the intro rather than in a section */
+.contact--intro { margin-top: 1.4rem; }
 
 .btn__icon {
   width: 1.05rem;
