@@ -64,7 +64,7 @@ void apply_gate_x(quantum_register_t *reg, uint8_t target) {
 
 void apply_gate_h(quantum_register_t *reg, uint8_t target) {
   uint16_t mask = (1u << target);
-  const int16_t s = Q14_INV_SQRT2;
+  const int32_t s = Q16_INV_SQRT2;   /* Q1.16: the state stays Q1.14, the scale does not */
 
   for (uint16_t i = 0; i < reg->dim; i++) {
     if (!(i & mask)) {
@@ -76,11 +76,11 @@ void apply_gate_h(quantum_register_t *reg, uint8_t target) {
       int32_t br = reg->state[i1].real;
       int32_t bi = reg->state[i1].imag;
 
-      reg->state[i0].real = (int16_t)(((ar + br) * s + Q14_HALF) >> 14);
-      reg->state[i0].imag = (int16_t)(((ai + bi) * s + Q14_HALF) >> 14);
+      reg->state[i0].real = (int16_t)(((ar + br) * s + Q16_HALF) >> 16);
+      reg->state[i0].imag = (int16_t)(((ai + bi) * s + Q16_HALF) >> 16);
 
-      reg->state[i1].real = (int16_t)(((ar - br) * s + Q14_HALF) >> 14);
-      reg->state[i1].imag = (int16_t)(((ai - bi) * s + Q14_HALF) >> 14);
+      reg->state[i1].real = (int16_t)(((ar - br) * s + Q16_HALF) >> 16);
+      reg->state[i1].imag = (int16_t)(((ai - bi) * s + Q16_HALF) >> 16);
     }
   }
 }

@@ -160,11 +160,13 @@
 
       <p>
         <strong>No square root.</strong> The Hadamard gate needs 1/√2, and there is no
-        <code>sqrt()</code> to call. It ships as a constant — <code>Q14_INV_SQRT2</code>,
-        the integer <code>11585</code> — and the same constant does double duty as the
-        renormalisation factor after a measurement, which is exactly correct as long as
-        every gate in the set rotates by 90°. That shortcut is written down in the source
-        as a deliberate assumption, not hidden.
+        <code>sqrt()</code> to call. It ships as a constant — <code>Q16_INV_SQRT2</code>,
+        the integer <code>46341</code>. It began life as the Q1.14 version,
+        <code>11585</code>, doing double duty as the renormalisation factor after a
+        measurement as well; both of those turned out to be wrong in ways worth keeping
+        the receipts for. Measurement now divides by the probability that actually
+        survived the collapse, and the gate keeps its scale in Q1.16 —
+        <a href="#h-cost">what it costs</a>, below, is where the norm gave that away.
       </p>
 
       <p>
@@ -244,10 +246,36 @@
         Measuring it was the point of building the tracer in the first place.
       </p>
 
+      <p>
+        And measuring it caught something. The drift on a deep circuit was not rounding
+        noise at all — it was <strong>one constant</strong>. Hadamard scaled by
+        <code>Q14_INV_SQRT2 = 11585</code>, but the exact value is
+        16384/√2&nbsp;=&nbsp;11585.2375, and that missing 0.2375 makes H a contraction
+        rather than a rotation: it takes 2·(11585/16384)²&nbsp;=&nbsp;0.9999590 of the
+        norm on <em>every</em> application, always in the same direction. A Grover
+        iteration is mostly Hadamards — the diffuser runs an H layer on the way in and
+        another on the way out — so six iterations on four qubits is 52 H gates, and
+        0.9999590<sup>52</sup>&nbsp;=&nbsp;0.997870. The engine measured 0.997873. The
+        constant accounted for the drift almost to the last digit; unbiased rounding
+        would have random-walked instead of decaying.
+      </p>
+
+      <p>
+        11585 already <em>is</em> the closest Q1.14 can get, so the fix was not a better
+        14-bit constant — it was to stop keeping the scale in Q1.14 at all. The gate
+        multiplies into an <code>int32</code> anyway, so H now scales by
+        <code>Q16_INV_SQRT2 = 46341</code> and shifts by 16. Sixteen bits is the ceiling:
+        |a&nbsp;±&nbsp;b| ≤ 16384√2 = 23170 for a normalised pair, and 23170 × 46341
+        leaves half of <code>int32</code> spare, where Q1.17 would sit on the overflow
+        boundary. The state is still Q1.14 — only the scale got wider — and the AVR
+        assembly is untouched, because <code>apply_gate_h</code> never called
+        <code>fp_mul</code>.
+      </p>
+
       <figure class="figure reveal">
         <svg viewBox="0 0 660 218" role="img"
-             aria-label="Line chart of the register norm after each operation of six Grover iterations on four qubits. It starts at 1.0, wanders slightly above and below, then falls steadily to 0.997873 by operation 16.">
-          <!-- gridlines; the 1.0 line is the ideal the engine is losing against -->
+             aria-label="Line chart of the register norm after each of the 16 operations of six Grover iterations on four qubits, with two curves. With the Q1.14 scale the norm falls steadily from 1.0 to 0.997873. With the Q1.16 scale it stays on the ideal line, wandering no further than 1.000222.">
+          <!-- gridlines; the 1.0 line is the ideal both curves are measured against -->
           <line x1="70" y1="56.7"  x2="630" y2="56.7"  stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 4"/>
           <line x1="70" y1="110.0" x2="630" y2="110.0" class="f-rule"/>
           <line x1="70" y1="163.3" x2="630" y2="163.3" class="f-rule"/>
@@ -256,44 +284,54 @@
           <text x="62" y="60"  text-anchor="end" class="f-tick">1.000</text>
           <text x="62" y="113" text-anchor="end" class="f-tick">0.999</text>
           <text x="62" y="167" text-anchor="end" class="f-tick">0.998</text>
-          <text x="636" y="52" class="f-tick">ideal</text>
 
+          <!-- before: the Q1.14 scale, leaking norm on every Hadamard -->
+          <polyline class="draw" style="--len:600" fill="none"
+                    stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 4"
+                    stroke-linejoin="round" stroke-linecap="round"
+                    points="70.0,56.7 105.0,58.9 140.0,56.7 175.0,49.7 210.0,56.7 245.0,56.7 280.0,70.1 315.0,70.1 350.0,93.9 385.0,93.9 420.0,121.0 455.0,121.0 490.0,136.5 525.0,136.5 560.0,156.3 595.0,156.3 630.0,170.1"/>
+
+          <!-- after: the Q1.16 scale, drift back down to rounding noise -->
           <polyline class="draw" style="--len:600" fill="none"
                     stroke="var(--pos)" stroke-width="2"
                     stroke-linejoin="round" stroke-linecap="round"
-                    points="70.0,56.7 105.0,58.9 140.0,56.7 175.0,49.6 210.0,56.7 245.0,56.7 280.0,70.1 315.0,70.1 350.0,93.9 385.0,93.9 420.0,121.0 455.0,121.0 490.0,136.6 525.0,136.6 560.0,156.3 595.0,156.3 630.0,170.1"/>
+                    points="70.0,56.7 105.0,58.9 140.0,56.7 175.0,49.7 210.0,56.7 245.0,56.7 280.0,52.2 315.0,52.2 350.0,51.9 385.0,51.9 420.0,45.3 455.0,45.3 490.0,45.3 525.0,45.3 560.0,52.7 595.0,52.7 630.0,44.9"/>
 
           <!-- hover targets: every point carries its exact value -->
-          <g fill="var(--pos)">
-            <circle cx="70.0"  cy="56.7"  r="3.5"><title>op 0 — norm 1.000000</title></circle>
-            <circle cx="105.0" cy="58.9"  r="3.5"><title>op 1 — norm 0.999959</title></circle>
-            <circle cx="140.0" cy="56.7"  r="3.5"><title>op 2 — norm 1.000000</title></circle>
-            <circle cx="175.0" cy="49.6"  r="3.5"><title>op 3 — norm 1.000132</title></circle>
-            <circle cx="210.0" cy="56.7"  r="3.5"><title>op 4 — norm 1.000000</title></circle>
-            <circle cx="245.0" cy="56.7"  r="3.5"><title>op 5 — norm 1.000000</title></circle>
-            <circle cx="280.0" cy="70.1"  r="3.5"><title>op 6 — norm 0.999748</title></circle>
-            <circle cx="315.0" cy="70.1"  r="3.5"><title>op 7 — norm 0.999748</title></circle>
-            <circle cx="350.0" cy="93.9"  r="3.5"><title>op 8 — norm 0.999302</title></circle>
-            <circle cx="385.0" cy="93.9"  r="3.5"><title>op 9 — norm 0.999302</title></circle>
-            <circle cx="420.0" cy="121.0" r="3.5"><title>op 10 — norm 0.998793</title></circle>
-            <circle cx="455.0" cy="121.0" r="3.5"><title>op 11 — norm 0.998793</title></circle>
-            <circle cx="490.0" cy="136.6" r="3.5"><title>op 12 — norm 0.998502</title></circle>
-            <circle cx="525.0" cy="136.6" r="3.5"><title>op 13 — norm 0.998502</title></circle>
-            <circle cx="560.0" cy="156.3" r="3.5"><title>op 14 — norm 0.998132</title></circle>
-            <circle cx="595.0" cy="156.3" r="3.5"><title>op 15 — norm 0.998132</title></circle>
-            <circle cx="630.0" cy="170.1" r="4.5" stroke="var(--surface)" stroke-width="2"><title>op 16 — norm 0.997873</title></circle>
+          <g fill="var(--muted)">
+            <circle cx="280.0" cy="70.1"  r="3"><title>Q1.14 — op 6 — norm 0.999748</title></circle>
+            <circle cx="350.0" cy="93.9"  r="3"><title>Q1.14 — op 8 — norm 0.999302</title></circle>
+            <circle cx="420.0" cy="121.0" r="3"><title>Q1.14 — op 10 — norm 0.998793</title></circle>
+            <circle cx="490.0" cy="136.5" r="3"><title>Q1.14 — op 12 — norm 0.998502</title></circle>
+            <circle cx="560.0" cy="156.3" r="3"><title>Q1.14 — op 14 — norm 0.998132</title></circle>
+            <circle cx="630.0" cy="170.1" r="4" stroke="var(--surface)" stroke-width="2"><title>Q1.14 — op 16 — norm 0.997873</title></circle>
           </g>
 
-          <text x="630" y="188" text-anchor="end" class="f-label">0.99787</text>
+          <g fill="var(--pos)">
+            <circle cx="70.0"  cy="56.7"  r="3"><title>Q1.16 — op 0 — norm 1.000000</title></circle>
+            <circle cx="105.0" cy="58.9"  r="3"><title>Q1.16 — op 1 — norm 0.999959</title></circle>
+            <circle cx="175.0" cy="49.7"  r="3"><title>Q1.16 — op 3 — norm 1.000132</title></circle>
+            <circle cx="280.0" cy="52.2"  r="3"><title>Q1.16 — op 6 — norm 1.000084</title></circle>
+            <circle cx="350.0" cy="51.9"  r="3"><title>Q1.16 — op 8 — norm 1.000090</title></circle>
+            <circle cx="420.0" cy="45.3"  r="3"><title>Q1.16 — op 10 — norm 1.000213</title></circle>
+            <circle cx="490.0" cy="45.3"  r="3"><title>Q1.16 — op 12 — norm 1.000213</title></circle>
+            <circle cx="560.0" cy="52.7"  r="3"><title>Q1.16 — op 14 — norm 1.000075</title></circle>
+            <circle cx="630.0" cy="44.9"  r="4" stroke="var(--surface)" stroke-width="2"><title>Q1.16 — op 16 — norm 1.000222</title></circle>
+          </g>
+
+          <text x="636" y="174" class="f-tick">Q1.14</text>
+          <text x="636" y="41"  class="f-tick" fill="var(--pos)">Q1.16</text>
           <text x="70"  y="208" class="f-tick">op 0</text>
+          <text x="350" y="208" text-anchor="middle" class="f-tick">6 Grover iterations · 4 qubits · 52 H gates</text>
           <text x="630" y="208" text-anchor="end" class="f-tick">op 16</text>
         </svg>
         <figcaption>
-          <strong>⟨ψ|ψ⟩ after every operation</strong> — six Grover iterations on a 4-qubit
-          register, measured by running the engine itself. Rounding pushes the norm both
-          above and below 1 early on, then it decays: <strong>0.21 % lost after 16 ops</strong>.
-          That is the price of fourteen fractional bits, and it is on screen in the debugger
-          the whole time.
+          <strong>⟨ψ|ψ⟩ after every operation</strong> — the same six Grover iterations run
+          twice, measured by the engine itself. With the scale in <strong>Q1.14</strong> the
+          norm decays monotonically to 0.997873, <strong>0.21 % lost</strong>; that slope is
+          the H constant, not the rounding. With the scale in <strong>Q1.16</strong> the decay
+          disappears and what is left is noise that wanders either side of 1 and stays inside
+          <strong>0.02 %</strong> — a tenth of the error, from a one-line change.
         </figcaption>
       </figure>
 

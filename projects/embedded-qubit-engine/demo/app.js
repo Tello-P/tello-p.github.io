@@ -391,7 +391,7 @@ function renderStats(frame, amps) {
     ['Norm ⟨ψ|ψ⟩', norm.toFixed(4), drift > 0.02,
       'Sum of |amplitude|². Should stay at 1.0000; anything else is lost or invented probability.'],
     ['Q1.14 drift', `${(drift * 100).toFixed(2)}<small>%</small>`, drift > 0.02,
-      'How far the norm has wandered from 1 — the accumulated cost of 14-bit rounding.'],
+      'How far the norm has wandered from 1 — the accumulated cost of rounding every amplitude into 14 bits. It is a random walk now; it used to be a slide, back when the Hadamard scale was a Q1.14 constant that lost 4e-5 of the norm per gate.'],
     ['Gates', String(gates), false,
       'apply_gate_* calls, counting the ones the diffuser expands into.'],
     ['Compute', `${compute.toFixed(1)}<small>µs</small>`, false,
