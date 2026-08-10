@@ -3,3 +3,8 @@ obj/
 bin/
 **/web/build/
 node_modules/
+
+# working clone of the PrivIP source, kept here only so the write-up can be
+# checked against the code. It is its own repository — see the upstream link
+# in README.md.
+/ip-protection-dhcp/

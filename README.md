@@ -22,9 +22,10 @@ touches anything outside `projects/<slug>/` and the card list on the home page.
 ## Adding a project
 
 1. `mkdir projects/<slug>` and write `projects/<slug>/index.html`. Easiest start is
-   to copy an existing project page — the shared shell is
-   `<link rel="stylesheet" href="../../assets/site.css">`, a
-   `<a class="back" href="../../">` link, an `.intro` header and `<section>`s.
+   to copy an existing project page. The long write-ups (`mystrace`, `priv-ip`) each
+   carry their own `page.css` and `page.js` instead of `assets/site.css`, but they
+   define the same palette tokens and repeat the same `.topbar` and `.sitefoot`, so
+   they read as the same site.
 2. Drop any images in `projects/<slug>/media/`, any live demo in
    `projects/<slug>/demo/` (must be self-contained).
 3. Add a card to the `.cards` block in `index.html`:
@@ -67,3 +68,16 @@ A ptrace-based system call tracer for x86_64 Linux, written in C11. The page is 
 write-up with a replayed terminal trace and two interactive figures; it is a
 static page split into `index.html`, `page.css` and `page.js`, with no build step.
 Upstream source: <https://github.com/Tello-P/strace-in-c>.
+
+### PrivIP — `projects/priv-ip/`
+
+MAC randomisation over `ioctl` plus a hand-built DHCP DISCOVER injected with
+libpcap, wrapped in a CustomTkinter dashboard and a systemd watchdog. Same
+three-file layout as MyStrace, no build step. Upstream source:
+<https://github.com/Tello-P/ip-protection-dhcp>.
+
+The page documents the code field by field, so it goes stale when the code
+changes. To re-check it, clone the upstream repo into `ip-protection-dhcp/` at
+the root of this one — it is gitignored — and read the source next to the page.
+The section 07 hexdump is not hand-written: it comes from linking `dhcpClient.c`
+against a stub `pcap_inject()` that dumps its buffer instead of transmitting.
