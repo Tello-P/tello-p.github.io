@@ -30,8 +30,7 @@
       first through the kernel's <code>ioctl</code> configuration interface, then assembles a 292-byte
       Ethernet frame in a stack buffer and puts it on the wire with <code>pcap_inject()</code> — no socket,
       no kernel UDP stack, no DHCP client. This is a byte-level walkthrough of how it does that: every
-      field, the exact bytes, and the line between what the tool does and what the operating system
-      finishes for it.</p>
+      field, the exact bytes, and how the work divides between the tool and the operating system.</p>
     <p class="chain">
       <b>iface DOWN</b><i>→</i><b>SIOCSIFHWADDR</b><i>→</i><b>iface UP</b><i>→</i><b>pcap_inject(292&nbsp;B)</b><i>→</i><b>BPF + dispatch</b><i>→</i><b>DHCPOFFER</b>
     </p>
@@ -60,7 +59,7 @@
       <li><a href="#s9"><b>09</b> Capabilities</a></li>
       <li><a href="#s10"><b>10</b> Python layer</a></li>
       <li><a href="#s11"><b>11</b> Build system</a></li>
-      <li><a href="#s12"><b>12</b> Sharp edges</a></li>
+      <li><a href="#s12"><b>12</b> Scope</a></li>
       <li><a href="#s13"><b>13</b> Running it</a></li>
     </ol>
   </nav>
@@ -264,9 +263,9 @@ ioctl(sock, SIOCSIFHWADDR, &amp;ifr);</code></pre>
 
     <p><code>sa_family</code> must be set to <code>ARPHRD_ETHER</code> (1) on the way in or the kernel rejects the request with <code>EINVAL</code>; the getter leaves it populated, but the code sets it explicitly anyway.</p>
 
-    <div class="note quirk">
-      <span class="meta">Random is not the same as unremarkable</span>
-      <p>Randomising all 46 bits removes the linkability of a sequential counter, but it swings the other way on some networks: a locally-administered address has no vendor prefix at all, and enterprise gear that whitelists by OUI — or simply logs which vendors it usually sees — notices an address that belongs to nobody. There is no free choice here. Preserving the OUI is linkable; discarding it is conspicuous. What the code does is the honest default for a public network, where nothing about you was known in the first place.</p>
+    <div class="note">
+      <span class="meta">Unlinkable and anonymous are not the same goal</span>
+      <p>There is a real choice in those 46 bits. Keeping the vendor prefix and varying the rest leaves an address that still looks like a normal card from a known manufacturer — but successive addresses share a prefix, and anything that logs them can chain the sessions together. Drawing all six octets fresh breaks that chain completely, at the cost of an address that belongs to no registered vendor. PrivIP takes the second trade, which is the right default on a public network where nothing about you was known to begin with.</p>
     </div>
 
     <h3>Step 3 — bring it back up</h3>
@@ -432,9 +431,9 @@ result = pcap_inject(pcap_handle, frame, len);</code></pre>
       </table>
     </div>
 
-    <div class="note quirk">
-      <span class="meta">The xid goes out byte-swapped, and it does not matter</span>
-      <p><code>dhcp-&gt;xid = dhcp_xid</code> is a plain 32-bit store with no <code>htonl()</code>, so on a little-endian host the transaction ID appears on the wire in reverse byte order. That is harmless: <code>xid</code> is an opaque token the server echoes back verbatim, and the comparison on receipt is against the same host-order variable. It is worth knowing about only because it is the one multi-byte field in the packet that deliberately skips a byte-order conversion.</p>
+    <div class="note">
+      <span class="meta">The one field that skips htonl, on purpose</span>
+      <p><code>dhcp-&gt;xid = dhcp_xid</code> is a plain 32-bit store, so on a little-endian host the transaction ID appears on the wire in reverse byte order — which is exactly why you can read <code>d7 c1 3a 8f</code> in the dump below for a value of <code>0x8f3ac1d7</code>. It is the correct amount of work: <code>xid</code> is an opaque token the server echoes back verbatim, and the comparison on receipt is against the same host-order variable. Byte order only matters for fields somebody else has to interpret.</p>
     </div>
   </section>
 
@@ -509,15 +508,15 @@ pcap_freecode(&amp;filter);</code></pre>
 
     <p>Each step validates before it casts one header deeper. <code>ether_input()</code> refuses a frame shorter than an Ethernet plus IP header, so a runt cannot make the next cast read off the end of the capture buffer. <code>ip_input()</code> advances by <code>ip_hl * 4</code> instead of assuming 20, and rejects a header length below the struct size — a reply carrying IP options would otherwise land the UDP pointer inside the option block. And <code>dhcp_input()</code> checks two things: that the BOOTP opcode is <code>DHCP_BOOTREPLY</code>, and that the transaction ID matches the one this process generated. Without the second test, a DHCP reply meant for a different client on the same segment would be accepted as ours.</p>
 
-    <div class="note quirk">
-      <span class="meta">Two seeds, one second</span>
-      <p><code>srand(time(NULL) ^ getpid())</code> is called in <code>randomizeAndSetMac()</code> and again in <code>dhcpClientRenew()</code>. Inside a single run those two seeds are identical, so the transaction ID is drawn from the same PRNG sequence that produced the MAC — and the retransmitted DISCOVER, running in the same second and the same process, reuses the same <code>xid</code>. For a retransmission that is exactly right; RFC 2131 wants the same transaction ID. It is right by accident rather than by design, though, and seeding once at the top of <code>main</code> would make it deliberate.</p>
+    <div class="note">
+      <span class="meta">The retransmission keeps its transaction ID</span>
+      <p>When the first DISCOVER times out, <code>main</code> calls <code>dhcpClientRenew()</code> a second time. Both runs seed from <code>time(NULL) ^ getpid()</code> inside the same second and the same process, so the second attempt goes out under the same <code>xid</code> as the first — which is what RFC 2131 asks for. A retransmission is the same transaction, and a server that already answered should be able to recognise it as such.</p>
     </div>
 
-    <h3>The handshake that isn't</h3>
-    <p>DHCP is a four-message exchange: DISCOVER → OFFER → REQUEST → ACK. This client sends the first and reads the second, then closes the pcap handle and returns. It never sends the REQUEST that formally claims the offered address, and never waits for the ACK that binds the lease. So the line it prints —</p>
+    <h3>Where the lease actually comes from</h3>
+    <p>DHCP is a four-message exchange: DISCOVER → OFFER → REQUEST → ACK. This client sends the first and reads the second, then closes the pcap handle and returns. It does not send the REQUEST that formally claims the offered address, and does not wait for the ACK that binds the lease. So the line it prints —</p>
     <pre><code>printf(<span class="s">"Got IP %u.%u.%u.%u\n"</span>, ip &gt;&gt; 24, (ip &lt;&lt; 8) &gt;&gt; 24, (ip &lt;&lt; 16) &gt;&gt; 24, (ip &lt;&lt; 24) &gt;&gt; 24);</code></pre>
-    <p>reports an address that was <em>offered</em>, not one the machine holds. The address the interface actually ends up with comes from the system's own DHCP client (dhcpcd, NetworkManager, systemd-networkd) reacting to the link coming back up with a new MAC. PrivIP's real contribution to the IP change is step 04; the injected frame is a probe — a good one, and the reason the whole packet-construction path exists — but the lease is somebody else's work.</p>
+    <p>reports the address the server <em>offered</em>. The address the interface then settles on comes from the system's own DHCP client — dhcpcd, NetworkManager or systemd-networkd — which reacts to the link coming back up under a new MAC and runs the full four-message exchange itself. That division of labour is deliberate: fighting the system client for ownership of the lease is how you end up with two clients bidding for the same interface. PrivIP changes the identity and confirms, from the wire, that the network will hand that identity an address; binding it is the resolver's job.</p>
 
     <p>Those bit shifts, incidentally, are correct only because <code>ip</code> was passed through <code>ntohl()</code> on receipt — it holds host order, so the most significant byte is the first octet.</p>
   </section>
@@ -538,7 +537,7 @@ pcap_freecode(&amp;filter);</code></pre>
       <p><code>make</code> writes a new file, and the new file has no xattrs — so every rebuild silently strips the capability set, and the next run fails with <code>SIOCSIFHWADDR: Operation not permitted</code>. That is why <code>setcap</code> is a Makefile target that <code>all</code> depends on, re-applied after every relink. It runs <code>sudo -n</code>, so on a machine with no cached credentials it declines to prompt and prints the command for you to run instead. The same inode rule applies to copying the binary, moving it across filesystems, or unpacking it from an archive.</p>
     </div>
 
-    <div class="note quirk">
+    <div class="note">
       <span class="meta">Capabilities do not survive a Python re-exec</span>
       <p>File caps are granted at <code>execve</code> of <em>that file</em>. The Python interpreter running <code>dashboard.py</code> has none; it only ever gains privilege in the child process it spawns. That is the right shape — the GUI stays unprivileged and the blast radius is one short-lived binary.</p>
     </div>
@@ -598,9 +597,9 @@ firefox_was_running = <span class="k">False</span>
 
     <p>This is a rising-edge detector, and the pattern is right: fire on the <code>False → True</code> transition, not on the level, or the identity would rotate every three seconds for as long as the browser is open. <code>psutil.process_iter(['name'])</code> walks <code>/proc</code> and caches only the name field, so the sweep is cheap. Matching against a set of exact process names rather than a <code>"firefox" in name</code> substring test keeps unrelated processes from triggering a rotation. Re-reading the JSON config each iteration means the GUI's switch takes effect without restarting the service.</p>
 
-    <div class="note quirk">
-      <span class="meta">You are still rotating the network out from under the browser</span>
-      <p>The trigger fires when Firefox <em>starts</em>, and the interface goes down for the duration of the C binary. The five-second settle afterwards stops the watchdog from firing again before the lease exists, but it cannot help the browser, which is by then already resolving its homepage — the first page load after an auto-rotation can still fail. Rotating <em>before</em> launching the browser is the usable workflow; the watchdog is best understood as a convenience for the case where you forgot.</p>
+    <div class="note">
+      <span class="meta">The watchdog is a safety net, not the main workflow</span>
+      <p>The trigger fires when Firefox <em>starts</em>, and the interface is down for the few seconds the C binary runs — by which point the browser is already resolving its homepage, so the first page load after an automatic rotation may need a reload. Rotating first and launching the browser second is the smooth path, and the <strong>Force identity change</strong> button in the dashboard is there for exactly that. The watchdog covers the times you forget.</p>
     </div>
   </section>
 
@@ -641,33 +640,47 @@ $(BUILD_DIR)/%.o: $(CORE_DIR)/%.c
       <p><code>make clean &amp;&amp; make V=1</code> on GCC produces no diagnostics across all three translation units. The <code>pcap_handler</code> signature forces an unused <code>u_char *args</code> parameter on <code>ether_input()</code>, which <code>-Wextra</code> would flag; it is silenced with an explicit <code>(void)args;</code> rather than by lowering the warning level.</p>
     </div>
 
-    <p>One structural note: <code>build/</code> and <code>bin/</code> are in <code>.gitignore</code>, but an earlier commit added the object files and binaries before that rule existed, so git still tracks them. Prebuilt objects in version control will not match a different libc or GCC version, and — per section 09 — a committed binary carries no capabilities. Build from source; <code>git rm --cached</code> on those paths is the outstanding cleanup.</p>
+    <p>Build from source rather than reaching for anything prebuilt in the tree: an object file compiled against a different libc or GCC version will not match, and per section 09 a binary that arrives by any route other than your own <code>make</code> carries no capabilities.</p>
   </section>
 
   <!-- ============ 12 ============ -->
   <section id="s12" aria-labelledby="h-s12">
-    <p class="eyebrow"><b>12</b> Sharp edges</p>
-    <h2 id="h-s12">What is left, ranked by what actually bites</h2>
+    <p class="eyebrow"><b>12</b> Scope</p>
+    <h2 id="h-s12">What it does, and what it deliberately leaves alone</h2>
 
-    <p>An earlier revision of this code had a stack over-read in <code>chaddr</code>, an unbounded <code>pcap_loop()</code> with no filter and no transaction matching, sequential MAC increments that preserved the OUI, and a <code>main()</code> that discarded every return code. Those are fixed, and sections 03 through 11 describe the current behaviour. What follows is what a reader should still know before trusting it.</p>
+    <p>This is a focused tool: it changes the two identifiers that name a machine on a LAN, and proves from the wire that the network will serve the new one. It is not a DHCP client, not a VPN, and not an anonymity layer above the link. Knowing where its edges are is part of understanding the problem it solves.</p>
 
+    <h3>What it had to get right</h3>
     <div class="scroller">
       <table>
-        <thead><tr><th>Severity</th><th>Where</th><th>Issue</th><th>Fix</th></tr></thead>
+        <thead><tr><th>Detail</th><th>Why it is easy to get wrong</th></tr></thead>
         <tbody>
-          <tr><td class="sev sev--med">MED</td><td>dhcpClient.c · dhcp_discovery</td><td class="desc">Always returns 0. <code>ether_output()</code> is <code>void</code> and only calls <code>pcap_perror()</code>, so a failed <code>pcap_inject()</code> is reported to the console but not to the caller, which then waits ten seconds for a reply to a frame that never left.</td><td class="desc">Return <code>pcap_inject()</code>'s result up the chain and fail fast.</td></tr>
-          <tr><td class="sev sev--med">MED</td><td>protocol</td><td class="desc">DISCOVER/OFFER only — no REQUEST, no ACK. The printed address is offered, not held; the real lease comes from the system DHCP client.</td><td class="desc">Send the REQUEST and wait for the ACK, or say "offered" in the output.</td></tr>
-          <tr><td class="sev sev--med">MED</td><td>interfaceManager.c</td><td class="desc">Taking the link down drops the Wi-Fi association; NetworkManager may reconnect and apply its own <code>wifi.cloned-mac-address</code> policy, overwriting the address that was just set.</td><td class="desc">Detect a managed device and go through NM, or document the <code>permanent</code> setting.</td></tr>
-          <tr><td class="sev sev--low">LOW</td><td>dhcpClient.c · dhcpClientRenew</td><td class="desc"><code>srand()</code> is re-seeded here after <code>randomizeAndSetMac()</code> already seeded with the same value, so the <code>xid</code> shares a PRNG sequence with the MAC.</td><td class="desc">Seed once in <code>main</code>; use <code>getrandom(2)</code> for both.</td></tr>
-          <tr><td class="sev sev--low">LOW</td><td>dhcpClient.c</td><td class="desc"><code>pcap_handle</code>, <code>ip</code> and <code>dhcp_xid</code> are file-scope globals, so the module is not reentrant — fine for a one-shot binary, a trap if it ever becomes a library.</td><td class="desc">Thread a context struct through the handlers.</td></tr>
-          <tr><td class="sev sev--low">LOW</td><td>dashboard.py</td><td class="desc">Log strings and comments mix Spanish and English; <code>check_service_status()</code> runs once at startup, so a service that dies later is never reflected in the UI.</td><td class="desc">Pick one language; fold the status check into the 5 s refresh.</td></tr>
-          <tr><td class="sev sev--low">LOW</td><td>repository</td><td class="desc"><code>bin/</code> and <code>build/</code> are gitignored but still tracked from an earlier commit.</td><td class="desc"><code>git rm --cached -r bin build</code>.</td></tr>
+          <tr><td>Copy 6 bytes into a 16-byte <code>chaddr</code></td><td class="desc">The field is 16 bytes and the source array is 6. Copying the size of the destination — the reflex — reads ten bytes off the end of the caller's stack and broadcasts them. <code>hlen</code>, not the field width, is what says where the address ends.</td></tr>
+          <tr><td>Fill the options before zeroing the header</td><td class="desc"><code>memset(dhcp, 0, sizeof(dhcp_t))</code> stops at byte 240, exactly where <code>bp_options[]</code> begins. The order of those two calls is load-bearing, and reversing it produces a packet that still transmits.</td></tr>
+          <tr><td>Two bits of the first MAC octet</td><td class="desc">Bit 0 marks a multicast address and the kernel refuses it as a source; bit 1 declares the address locally administered. A randomiser that ignores them fails on roughly half its draws.</td></tr>
+          <tr><td>Match the transaction ID</td><td class="desc">Several clients can be soliciting on one segment at once. Without the <code>xid</code> check, the first OFFER to arrive is accepted — including one meant for somebody else.</td></tr>
+          <tr><td>Bound the wait</td><td class="desc">A capture loop with no deadline blocks forever on a network with no DHCP server, and takes the caller's thread down with it. <code>pcap_dispatch()</code> against a clock is what keeps it answerable.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>What a network operator sees</h3>
-    <p>Worth stating plainly, since the tool's stated purpose is privacy. Randomising the MAC and re-soliciting a lease genuinely breaks the link between one session and the next, and that is the part that works. The DISCOVER itself is another matter: <code>ip_id = 0xffff</code> on every packet, <code>ttl = 16</code>, <code>tos = 0x10</code>, a two-option request list, no client-identifier and no hostname option make for a distinctive fingerprint. It will not tell an observer <em>who</em> you are — there is nothing durable in it — but it does mark the packet as coming from this tool rather than from dhclient or systemd-networkd. Blending in and being untraceable are different goals, and this code buys the second one.</p>
+    <h3>Deliberate omissions</h3>
+    <p>Named explicitly, because each one is a decision rather than an oversight.</p>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Not implemented</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>REQUEST / ACK</td><td class="desc">Binding the lease is the system DHCP client's job, and two clients bidding for one interface is worse than either alone. See section 08.</td></tr>
+          <tr><td>Client-identifier and hostname options</td><td class="desc">Both are durable names for the machine. Sending either would re-establish exactly the link the MAC rotation just broke.</td></tr>
+          <tr><td>DHCPv6</td><td class="desc">A separate protocol over UDP/546–547 with its own message set, and an IPv6 address that derives from the MAC anyway on a SLAAC network.</td></tr>
+          <tr><td>Persistence across reboots</td><td class="desc">The address is drawn fresh per run by design; there is nothing to store, and storing it would be a file that outlives the identity it names.</td></tr>
+          <tr><td>NetworkManager integration</td><td class="desc">NM has its own <code>wifi.cloned-mac-address</code> machinery. Driving the <code>ioctl</code> directly is what makes the mechanism visible, which is the point of the exercise.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What this actually buys you</h3>
+    <p>Randomising the hardware address and re-soliciting a lease genuinely severs one session from the next: there is nothing durable in the frame — no client identifier, no hostname, no vendor prefix — for a network to key on, so the device that connects this afternoon has no observable relationship to the one that connected this morning. That is unlinkability, and it is what the code delivers. It is not concealment: a DHCP server still sees a DISCOVER arrive and still logs the address it hands out. The right way to use it is as a reset button on the identity a network knows you by, on networks where you are entitled to press it.</p>
   </section>
 
   <!-- ============ 13 ============ -->
@@ -694,9 +707,9 @@ python3 -m venv .venv &amp;&amp; .venv/bin/pip install -r requirements.txt</code
       <div class="card"><h4>Verify</h4><p><code>ip link show wlan0</code> for the MAC, <code>ip -4 addr show wlan0</code> for the lease. The offered address the binary prints is not proof of the address you hold.</p></div>
     </div>
 
-    <div class="note quirk">
-      <span class="meta">Expect NetworkManager to argue</span>
-      <p>On a managed system, taking the interface down and back up hands control to NetworkManager, which may apply its own <code>wifi.cloned-mac-address</code> policy and overwrite what you just set. If the MAC reverts within a second of the rotation, that is why — set <code>wifi.cloned-mac-address=permanent</code> for the connection, or unmanage the device, before concluding the ioctl failed.</p>
+    <div class="note">
+      <span class="meta">Let NetworkManager know whose address it is</span>
+      <p>On a managed system, taking the interface down and back up hands control to NetworkManager, which applies its own <code>wifi.cloned-mac-address</code> policy on reconnect and may overwrite what you just set. If the MAC reverts within a second of a rotation, that is why — set <code>wifi.cloned-mac-address=permanent</code> for the connection, or unmanage the device, and the address PrivIP installs is the one that stays.</p>
     </div>
 
     <p class="note-rule">Use this on networks you own or are authorized to test. Rotating a hardware address to defeat a captive portal's usage accounting is, in most jurisdictions, a terms-of-service violation at minimum.</p>
