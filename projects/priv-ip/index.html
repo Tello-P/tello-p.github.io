@@ -99,78 +99,83 @@
 
     <figure>
       <div class="scroller">
-        <svg viewBox="0 0 860 400" width="860" height="400" role="img" aria-label="Architecture diagram: dashboard and monitor both invoke the privipchanger binary, which calls ioctl and libpcap">
+        <svg viewBox="0 0 720 420" width="720" height="420" role="img" aria-label="Architecture diagram: the dashboard and the watchdog both invoke the privipchanger binary, which drives ioctl and libpcap">
           <defs>
             <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
             </marker>
           </defs>
+
           <g fill="none" stroke="var(--line)" stroke-width="1">
-            <rect x="14" y="14" width="380" height="150" rx="4"/>
-            <rect x="14" y="196" width="380" height="82" rx="4"/>
-            <rect x="470" y="14" width="376" height="264" rx="4"/>
-            <rect x="470" y="310" width="376" height="72" rx="4"/>
+            <rect x="8" y="24" width="300" height="192" rx="4"/>
+            <rect x="356" y="24" width="356" height="282" rx="4"/>
+            <rect x="356" y="338" width="356" height="68" rx="4"/>
           </g>
           <g font-size="10" letter-spacing="1.6" fill="var(--text-3)">
-            <text x="28" y="34">USER SPACE · PYTHON · UNPRIVILEGED</text>
-            <text x="28" y="216">SYSTEMD --USER</text>
-            <text x="484" y="34">USER SPACE · C · FILE CAPABILITIES</text>
-            <text x="484" y="330">KERNEL</text>
+            <text x="20" y="44">USER SPACE · PYTHON</text>
+            <text x="368" y="44">USER SPACE · C · FILE CAPS</text>
+            <text x="368" y="358">KERNEL</text>
           </g>
 
           <g stroke="var(--line)" stroke-width="1" fill="var(--surface-2)">
-            <rect x="32" y="48" width="164" height="52" rx="4"/>
-            <rect x="212" y="48" width="164" height="52" rx="4"/>
-            <rect x="32" y="112" width="344" height="38" rx="4"/>
-            <rect x="32" y="230" width="344" height="34" rx="4"/>
-            <rect x="490" y="48" width="336" height="46" rx="4"/>
-            <rect x="490" y="112" width="160" height="70" rx="4"/>
-            <rect x="666" y="112" width="160" height="70" rx="4"/>
-            <rect x="490" y="200" width="336" height="62" rx="4"/>
-            <rect x="490" y="342" width="336" height="26" rx="4"/>
+            <rect x="20" y="58" width="134" height="62" rx="4"/>
+            <rect x="166" y="58" width="134" height="62" rx="4"/>
+            <rect x="20" y="160" width="280" height="44" rx="4"/>
+            <rect x="370" y="58" width="328" height="48" rx="4"/>
+            <rect x="370" y="122" width="158" height="76" rx="4"/>
+            <rect x="540" y="122" width="158" height="76" rx="4"/>
+            <rect x="370" y="216" width="328" height="48" rx="4"/>
+            <rect x="370" y="366" width="328" height="32" rx="4"/>
           </g>
 
           <g font-size="12" fill="var(--text)">
-            <text x="44" y="70">dashboard.py</text>
-            <text x="224" y="70">monitor.py</text>
-            <text x="44" y="136">~/.privip_config.json</text>
-            <text x="44" y="252">privip-monitor.service</text>
-            <text x="502" y="70">bin/privipchanger</text>
-            <text x="502" y="136">changeMac()</text>
-            <text x="678" y="136">dhcpClientRenew()</text>
-            <text x="502" y="222">libpcap · AF_PACKET ring · BPF</text>
-            <text x="502" y="360">net_device · driver TX/RX queue</text>
+            <text x="30" y="78">dashboard.py</text>
+            <text x="176" y="78">monitor.py</text>
+            <text x="30" y="182">~/.privip_config.json</text>
+            <text x="380" y="78">bin/privipchanger</text>
+            <text x="380" y="142">changeMac()</text>
+            <text x="550" y="142">dhcpClientRenew()</text>
+            <text x="380" y="236">libpcap · AF_PACKET</text>
+            <text x="380" y="387">net_device · TX/RX queue</text>
           </g>
-          <g font-size="10.5" fill="var(--text-3)">
-            <text x="44" y="88">CustomTkinter GUI, 5 s poll</text>
-            <text x="224" y="88">psutil poll, 3 s, firefox edge</text>
-            <text x="502" y="88">setcap cap_net_raw,cap_net_admin+ep</text>
-            <text x="502" y="154">socket(AF_INET,SOCK_DGRAM)</text>
-            <text x="502" y="170">SIOCGIFHWADDR / SIOCSIFHWADDR</text>
-            <text x="678" y="154">pcap_open_live() · pcap_inject()</text>
-            <text x="678" y="170">pcap_setfilter() / pcap_dispatch()</text>
-            <text x="502" y="242">snaplen BUFSIZ · promisc 0 · to_ms 100</text>
+
+          <g font-size="10" fill="var(--text-3)">
+            <text x="30" y="95">CustomTkinter GUI</text>
+            <text x="30" y="108">5 s state poll</text>
+            <text x="176" y="95">systemd --user unit</text>
+            <text x="176" y="108">psutil, 3 s poll</text>
+            <text x="30" y="196">interface · auto_firefox</text>
+            <text x="380" y="94">setcap cap_net_raw,cap_net_admin+ep</text>
+            <text x="380" y="160">socket(AF_INET,</text>
+            <text x="380" y="173">SOCK_DGRAM)</text>
+            <text x="380" y="186">SIOCSIFHWADDR</text>
+            <text x="550" y="160">pcap_open_live()</text>
+            <text x="550" y="173">pcap_inject()</text>
+            <text x="550" y="186">pcap_dispatch()</text>
+            <text x="380" y="252">BPF · snaplen BUFSIZ · to_ms 100</text>
           </g>
 
           <g stroke="var(--accent)" stroke-width="1.4" fill="none" color="var(--accent)" marker-end="url(#ar)">
-            <path d="M114 100 L114 112"/>
-            <path d="M294 100 L294 112"/>
-            <path d="M376 74 L490 66"/>
-            <path d="M376 82 L490 74" stroke-dasharray="3 3"/>
-            <path d="M204 264 L204 100" stroke-dasharray="3 3"/>
+            <path d="M87 120 L87 160"/>
+            <path d="M233 120 L233 160"/>
+            <path d="M308 70 L370 66"/>
+            <path d="M370 88 L308 92" stroke-dasharray="3 3"/>
           </g>
-          <g fill="var(--accent)" font-size="10">
-            <text x="386" y="60">execve + argv[1]</text>
-            <text x="386" y="98">stdout / stderr pipe</text>
+          <g fill="var(--accent)" font-size="10" text-anchor="middle">
+            <text x="334" y="58">argv[1]</text>
+            <text x="334" y="110">stdout</text>
           </g>
+
           <g stroke="var(--line)" stroke-width="1.4" fill="none" color="var(--text-3)" marker-end="url(#ar)">
-            <path d="M570 182 L570 200"/>
-            <path d="M746 182 L746 200"/>
-            <path d="M658 262 L658 342"/>
+            <path d="M449 106 L449 122"/>
+            <path d="M619 106 L619 122"/>
+            <path d="M449 198 L449 216"/>
+            <path d="M619 198 L619 216"/>
+            <path d="M534 264 L534 366"/>
           </g>
         </svg>
       </div>
-      <figcaption>Solid arrows are process boundaries crossed by <code>execve</code>; dashed arrows are the stdout pipe and the shared config file. Nothing shares memory — the Python side never links against the C side.</figcaption>
+      <figcaption>Blue arrows cross a process boundary: solid is <code>execve</code> with the interface name in <code>argv[1]</code>, dashed is the captured stdout coming back. Both Python processes read and write the same JSON config, which is how the dashboard's switch reaches the watchdog. Nothing shares memory — the Python side never links against the C side.</figcaption>
     </figure>
 
     <div class="scroller">
@@ -359,36 +364,35 @@ result = pcap_inject(pcap_handle, frame, len);</code></pre>
 
     <figure>
       <div class="scroller">
-        <svg viewBox="0 0 860 190" width="860" height="190" role="img" aria-label="Encapsulation diagram of the 292-byte frame">
+        <svg viewBox="0 0 720 175" width="720" height="175" role="img" aria-label="Encapsulation diagram of the 292-byte frame">
           <g font-size="10.5" fill="var(--text-3)" letter-spacing="1.2">
             <text x="4" y="16">OFFSET</text>
-            <text x="4" y="150">CUMULATIVE</text>
           </g>
           <g stroke-width="1" fill="var(--surface)">
-            <rect x="4" y="34" width="70" height="58" rx="3" stroke="var(--l2)"/>
-            <rect x="74" y="34" width="98" height="58" rx="3" stroke="var(--l3)"/>
-            <rect x="172" y="34" width="52" height="58" rx="3" stroke="var(--l4)"/>
-            <rect x="224" y="34" width="570" height="58" rx="3" stroke="var(--l7)"/>
-            <rect x="794" y="34" width="62" height="58" rx="3" stroke="var(--accent)"/>
+            <rect x="4" y="34" width="58" height="58" rx="3" stroke="var(--l2)"/>
+            <rect x="62" y="34" width="86" height="58" rx="3" stroke="var(--l3)"/>
+            <rect x="148" y="34" width="46" height="58" rx="3" stroke="var(--l4)"/>
+            <rect x="194" y="34" width="462" height="58" rx="3" stroke="var(--l7)"/>
+            <rect x="656" y="34" width="60" height="58" rx="3" stroke="var(--accent)"/>
           </g>
           <g font-size="12" fill="var(--text)">
-            <text x="16" y="60">ETH</text><text x="86" y="60">IPv4</text>
-            <text x="180" y="60">UDP</text><text x="236" y="60">BOOTP / DHCP fixed header</text>
-            <text x="802" y="60">OPTS</text>
+            <text x="14" y="60">ETH</text><text x="72" y="60">IPv4</text>
+            <text x="158" y="60">UDP</text><text x="206" y="60">BOOTP / DHCP fixed header</text>
+            <text x="666" y="60">OPTS</text>
           </g>
           <g font-size="10.5" fill="var(--text-3)">
-            <text x="16" y="78">14 B</text><text x="86" y="78">20 B</text>
-            <text x="180" y="78">8 B</text><text x="236" y="78">236 B + 4 B magic cookie 63 82 53 63</text>
-            <text x="802" y="78">10 B</text>
+            <text x="14" y="78">14 B</text><text x="72" y="78">20 B</text>
+            <text x="158" y="78">8 B</text><text x="206" y="78">236 B + 4 B magic cookie 63 82 53 63</text>
+            <text x="666" y="78">10 B</text>
           </g>
           <g font-size="10.5" fill="var(--text-3)">
-            <text x="4" y="112">0x000</text><text x="74" y="112">0x00E</text><text x="172" y="112">0x022</text>
-            <text x="224" y="112">0x02A</text><text x="790" y="112">0x11A</text><text x="820" y="112">0x124</text>
+            <text x="4" y="112">0x000</text><text x="62" y="112">0x00E</text><text x="148" y="112">0x022</text>
+            <text x="194" y="112">0x02A</text><text x="644" y="112">0x11A</text><text x="684" y="112">0x124</text>
           </g>
           <g stroke="var(--line)" stroke-width="1">
-            <path d="M4 120 L4 130 M856 120 L856 130 M4 125 L856 125"/>
+            <path d="M4 128 L4 138 M716 128 L716 138 M4 133 L716 133"/>
           </g>
-          <text x="400" y="145" font-size="11" fill="var(--text)">292 bytes total · below the 1518 B MTU, above the 60 B minimum — no padding needed</text>
+          <text x="360" y="158" font-size="11" fill="var(--text)" text-anchor="middle">292 bytes total — under the 1518 B MTU, over the 60 B minimum</text>
         </svg>
       </div>
       <figcaption>Layer colours are reused in the hexdump below: <span class="tag t-l2">ETH</span> <span class="tag t-l3">IPv4</span> <span class="tag t-l4">UDP</span> <span class="tag t-l7">DHCP</span>.</figcaption>
