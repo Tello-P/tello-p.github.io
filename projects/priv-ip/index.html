@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrivIP — Tello Pérez Garrote</title>
+<meta name="description" content="A byte-level walkthrough of PrivIP: MAC rotation through ioctl and a hand-built 300-byte DHCP DISCOVER injected with libpcap.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>◈</text></svg>">
+<link rel="stylesheet" href="./page.css">
+<script src="./page.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="topbar__home" href="../../"><span class="mark" aria-hidden="true">◈</span>Tello Pérez Garrote</a>
+    <nav class="topbar__nav" aria-label="Site">
+      <a href="../../#h-projects">Projects</a>
+      <a href="https://github.com/Tello-P">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="masthead">
+    <div class="kicker"><span class="rule"></span>privip &nbsp;·&nbsp; network identity rotator &nbsp;·&nbsp; linux</div>
+    <h1>Rotating a machine's <em>network identity</em>, one ioctl and one injected frame at a time</h1>
+    <p class="tagline">A Linux utility that rewrites a NIC's hardware address and hand-builds the DHCP DISCOVER that follows it.</p>
+    <p class="lede">Two identifiers name you on a LAN, and they live at different layers. PrivIP rewrites the
+      first through the kernel's <code>ioctl</code> configuration interface, then assembles a 300-byte
+      Ethernet frame in a stack buffer and puts it on the wire with <code>pcap_inject()</code> — no socket,
+      no kernel UDP stack, no DHCP client. This is a byte-level walkthrough of how it does that, what it
+      gets right, and where the implementation lies to you.</p>
+    <p class="chain">
+      <b>iface DOWN</b><i>→</i><b>SIOCSIFHWADDR</b><i>→</i><b>iface UP</b><i>→</i><b>pcap_inject(300&nbsp;B)</b><i>→</i><b>pcap_loop</b><i>→</i><b>DHCPOFFER</b>
+    </p>
+    <div class="byline">
+      <span>~600 lines of C99 and Python</span>
+      <span>libpcap · AF_INET ioctl · CPython</span>
+      <span><a href="https://github.com/Tello-P/ip-protection-dhcp">github.com/Tello-P/ip-protection-dhcp</a></span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+<div class="layout">
+
+  <nav class="rail" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#s1"><b>01</b> The problem</a></li>
+      <li><a href="#s2"><b>02</b> Process topology</a></li>
+      <li><a href="#s3"><b>03</b> Entry point</a></li>
+      <li><a href="#s4"><b>04</b> MAC rotation</a></li>
+      <li><a href="#s5"><b>05</b> The frame</a></li>
+      <li><a href="#s6"><b>06</b> Byte layout</a></li>
+      <li><a href="#s7"><b>07</b> Hexdump</a></li>
+      <li><a href="#s8"><b>08</b> Receive path</a></li>
+      <li><a href="#s9"><b>09</b> Capabilities</a></li>
+      <li><a href="#s10"><b>10</b> Python layer</a></li>
+      <li><a href="#s11"><b>11</b> Build system</a></li>
+      <li><a href="#s12"><b>12</b> Sharp edges</a></li>
+      <li><a href="#s13"><b>13</b> Running it</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <!-- ============ 01 ============ -->
+  <section id="s1" aria-labelledby="h-s1">
+    <p class="eyebrow"><b>01</b> The problem</p>
+    <h2 id="h-s1">Two addresses identify you on a LAN, and they live at different layers</h2>
+
+    <p>When a laptop joins a network it presents two identifiers. The first is the <strong>MAC address</strong> — 48 bits burned into the NIC, visible to every device in the broadcast domain, never routed past the first hop. The second is the <strong>IP address</strong> — leased from a DHCP server, and in practice keyed to the MAC that asked for it.</p>
+
+    <p>A captive portal that counts your 30 free minutes remembers a MAC. A DHCP server that hands you the same 192.168.1.47 every morning does so because it remembers a MAC. Change the first identifier and the second follows; the network sees a device it has never met.</p>
+
+    <p>PrivIP does exactly that, in two moves. It rewrites the interface's hardware address through the kernel's <code>ioctl</code> configuration interface, then — instead of asking the system's DHCP client to renew — it builds a 300-byte Ethernet frame in a stack buffer and shoves it onto the wire with <code>pcap_inject()</code>.</p>
+
+    <div class="grid">
+      <div class="card"><h4>Layer 2</h4><span class="val">48 bit</span><p>Hardware address, rewritten via <code>SIOCSIFHWADDR</code> while the link is down.</p></div>
+      <div class="card"><h4>Layer 3</h4><span class="val">32 bit</span><p>Leased address, re-solicited by a hand-built DHCP DISCOVER broadcast.</p></div>
+      <div class="card"><h4>Injected frame</h4><span class="val">300 B</span><p>14 Ethernet + 20 IP + 8 UDP + 240 BOOTP + 18 options.</p></div>
+      <div class="card"><h4>Privilege</h4><span class="val">2 caps</span><p><code>cap_net_raw</code> to inject, <code>cap_net_admin</code> to reconfigure the link.</p></div>
+    </div>
+
+    <div class="note ok">
+      <span class="meta">Why not just call dhclient</span>
+      <p>You could. The point of the exercise is that the DHCP client here is <em class="term">not</em> a client in the OS sense — there is no <code>AF_INET</code> socket, no <code>bind()</code> to port 68, no kernel UDP stack involvement on transmit. The frame is assembled byte by byte and handed to the driver. That makes it a teaching artifact for packet construction as much as a privacy tool.</p>
+    </div>
+  </section>
+
+  <!-- ============ 02 ============ -->
+  <section id="s2" aria-labelledby="h-s2">
+    <p class="eyebrow"><b>02</b> Process topology</p>
+    <h2 id="h-s2">One privileged C binary, two unprivileged Python processes, one systemd unit</h2>
+
+    <p>The repository is a hybrid. Everything that touches the kernel is C; everything that touches the human is Python. They communicate through exactly two channels: <code>argv</code> plus captured stdout/stderr, and a JSON file in <code>$HOME</code>.</p>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 860 400" width="860" height="400" role="img" aria-label="Architecture diagram: dashboard and monitor both invoke the privipchanger binary, which calls ioctl and libpcap">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g fill="none" stroke="var(--line)" stroke-width="1">
+            <rect x="14" y="14" width="380" height="150" rx="4"/>
+            <rect x="14" y="196" width="380" height="82" rx="4"/>
+            <rect x="470" y="14" width="376" height="264" rx="4"/>
+            <rect x="470" y="310" width="376" height="72" rx="4"/>
+          </g>
+          <g font-size="10" letter-spacing="1.6" fill="var(--text-3)">
+            <text x="28" y="34">USER SPACE · PYTHON · UNPRIVILEGED</text>
+            <text x="28" y="216">SYSTEMD --USER</text>
+            <text x="484" y="34">USER SPACE · C · FILE CAPABILITIES</text>
+            <text x="484" y="330">KERNEL</text>
+          </g>
+
+          <g stroke="var(--line)" stroke-width="1" fill="var(--surface-2)">
+            <rect x="32" y="48" width="164" height="52" rx="4"/>
+            <rect x="212" y="48" width="164" height="52" rx="4"/>
+            <rect x="32" y="112" width="344" height="38" rx="4"/>
+            <rect x="32" y="230" width="344" height="34" rx="4"/>
+            <rect x="490" y="48" width="336" height="46" rx="4"/>
+            <rect x="490" y="112" width="160" height="70" rx="4"/>
+            <rect x="666" y="112" width="160" height="70" rx="4"/>
+            <rect x="490" y="200" width="336" height="62" rx="4"/>
+            <rect x="490" y="342" width="336" height="26" rx="4"/>
+          </g>
+
+          <g font-size="12" fill="var(--text)">
+            <text x="44" y="70">dashboard.py</text>
+            <text x="224" y="70">monitor.py</text>
+            <text x="44" y="136">~/.privip_config.json</text>
+            <text x="44" y="252">privip-monitor.service</text>
+            <text x="502" y="70">bin/privipchanger</text>
+            <text x="502" y="136">changeMac()</text>
+            <text x="678" y="136">dhcpClientRenew()</text>
+            <text x="502" y="222">libpcap · AF_PACKET ring</text>
+            <text x="502" y="360">net_device · driver TX/RX queue</text>
+          </g>
+          <g font-size="10.5" fill="var(--text-3)">
+            <text x="44" y="88">CustomTkinter GUI, 5 s poll</text>
+            <text x="224" y="88">psutil poll, 3 s, firefox edge</text>
+            <text x="502" y="88">setcap cap_net_raw,cap_net_admin+ep</text>
+            <text x="502" y="154">socket(AF_INET,SOCK_DGRAM)</text>
+            <text x="502" y="170">SIOCGIFHWADDR / SIOCSIFHWADDR</text>
+            <text x="678" y="154">pcap_open_live()</text>
+            <text x="678" y="170">pcap_inject() / pcap_loop()</text>
+            <text x="502" y="242">snaplen 8192 · promisc 0 · to_ms 10</text>
+          </g>
+
+          <g stroke="var(--accent)" stroke-width="1.4" fill="none" color="var(--accent)" marker-end="url(#ar)">
+            <path d="M114 100 L114 112"/>
+            <path d="M294 100 L294 112"/>
+            <path d="M376 74 L490 66"/>
+            <path d="M376 82 L490 74" stroke-dasharray="3 3"/>
+            <path d="M204 264 L204 100" stroke-dasharray="3 3"/>
+          </g>
+          <g fill="var(--accent)" font-size="10">
+            <text x="386" y="60">execve + argv[1]</text>
+            <text x="386" y="98">stdout / stderr pipe</text>
+          </g>
+          <g stroke="var(--line)" stroke-width="1.4" fill="none" color="var(--text-3)" marker-end="url(#ar)">
+            <path d="M570 182 L570 200"/>
+            <path d="M746 182 L746 200"/>
+            <path d="M658 262 L658 342"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Solid arrows are process boundaries crossed by <code>execve</code>; dashed arrows are the stdout pipe and the shared config file. Nothing shares memory — the Python side never links against the C side.</figcaption>
+    </figure>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Path</th><th>Language</th><th>Role</th><th>Privilege</th></tr></thead>
+        <tbody>
+          <tr><td>core/main.c</td><td>C</td><td class="desc">Argument check, then the fixed three-call sequence.</td><td>file caps</td></tr>
+          <tr><td>core/interfaceManager.c</td><td>C</td><td class="desc"><code>ioctl</code> link control: flags, get MAC, set MAC.</td><td>CAP_NET_ADMIN</td></tr>
+          <tr><td>core/dhcpClient.c</td><td>C</td><td class="desc">Frame construction, injection, and the pcap receive loop.</td><td>CAP_NET_RAW</td></tr>
+          <tr><td>src/dashboard.py</td><td>Python</td><td class="desc">GUI, live MAC/IP readout, systemd unit authoring.</td><td>none</td></tr>
+          <tr><td>src/monitor.py</td><td>Python</td><td class="desc">Polls the process table; fires the binary on a Firefox launch edge.</td><td>none</td></tr>
+          <tr><td>scripts/install.sh</td><td>bash</td><td class="desc">Deps, <code>make</code>, <code>setcap</code>, virtualenv.</td><td>sudo, once</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 03 ============ -->
+  <section id="s3" aria-labelledby="h-s3">
+    <p class="eyebrow"><b>03</b> Entry point</p>
+    <h2 id="h-s3">Fifteen lines that set the whole sequence</h2>
+
+    <pre><code><span class="c">/* core/main.c */</span>
+<span class="k">int</span> main(<span class="k">int</span> argc, <span class="k">char</span> *argv[]) {
+    <span class="k">if</span> (argc != 2) {
+        fprintf(stderr, <span class="s">"Incorrect argument number, just one interface please\n"</span>);
+        <span class="k">return</span> 1;
+    }
+
+    changeMac(2, argv);          <span class="c">// L2: down → increment → up</span>
+    dhcpClientRenew(2, argv);    <span class="c">// "set to 0.0.0.0"</span>
+    dhcpClientRenew(2, argv);    <span class="c">// "get new IP addr"</span>
+    <span class="k">return</span> 0;
+}</code></pre>
+
+    <p>Both subsystems take <code>(int argc, char **argv)</code> rather than a plain interface string. That is a deliberate shim: <code>dhcpClient.c</code> is a lightly-modified copy of Samuel Jacob's BSD-licensed <em class="term">Simple DHCP Client</em>, whose <code>main()</code> was renamed to <code>dhcpClientRenew()</code> with its CLI parsing left intact. So the interface name arrives as <code>argv[1]</code> in both, and both still print their own usage string.</p>
+
+    <div class="note bug">
+      <span class="meta">Return values discarded</span>
+      <p><code>changeMac()</code> returns 1 on any failure and <code>main</code> ignores it. If the MAC rewrite fails — wrong interface name, missing <code>CAP_NET_ADMIN</code>, a driver that refuses <code>SIOCSIFHWADDR</code> — the program proceeds to broadcast two DISCOVERs from the <em class="term">old</em> MAC and exits 0. The caller, including the GUI, is told everything worked.</p>
+    </div>
+
+    <div class="note quirk">
+      <span class="meta">The comments overstate the code</span>
+      <p>Neither call "sets to 0.0.0.0". Both invocations run the identical code path: open pcap, send one DISCOVER, block until a BOOTREPLY arrives. The double call is a retransmission, not a two-phase release-then-acquire. Nothing in this binary ever sends a DHCPRELEASE or a DHCPREQUEST.</p>
+    </div>
+  </section>
+
+  <!-- ============ 04 ============ -->
+  <section id="s4" aria-labelledby="h-s4">
+    <p class="eyebrow"><b>04</b> MAC rotation</p>
+    <h2 id="h-s4">Three ioctls on a throwaway datagram socket</h2>
+
+    <p>There is no syscall named "set MAC address". Link configuration on Linux rides on <code>ioctl()</code> against any socket file descriptor — the socket is never used for traffic, it exists only as a handle into the networking subsystem. The whole module opens <code>socket(AF_INET, SOCK_DGRAM, 0)</code> and issues requests against it.</p>
+
+    <p>The request payload is <code>struct ifreq</code>: a fixed 16-byte interface name (<code>IFNAMSIZ</code>) followed by a large union whose active member depends on which request code you pass.</p>
+
+    <h3>Step 1 — take the link down <span class="tag t-l2">SIOCSIFFLAGS</span></h3>
+    <pre><code>ioctl(sock, SIOCGIFFLAGS, &amp;ifr);      <span class="c">// read current flags</span>
+<span class="k">if</span> (state) ifr.ifr_flags |=  IFF_UP;
+<span class="k">else</span>       ifr.ifr_flags &amp;= ~IFF_UP;
+ioctl(sock, SIOCSIFFLAGS, &amp;ifr);      <span class="c">// write them back</span></code></pre>
+    <p>Read-modify-write, not blind assignment — clobbering the flag word would drop <code>IFF_BROADCAST</code>, <code>IFF_MULTICAST</code> and friends. The link must be administratively down first: most drivers return <code>EBUSY</code> from <code>SIOCSIFHWADDR</code> on a running interface, because the address is programmed into the hardware receive filter.</p>
+
+    <h3>Step 2 — read, increment, write <span class="tag t-l2">SIOCSIFHWADDR</span></h3>
+    <pre><code>ioctl(sock, SIOCGIFHWADDR, &amp;ifr);
+memcpy(currentMac, ifr.ifr_hwaddr.sa_data, 6);
+
+memcpy(newMac, currentMac, 6);
+<span class="k">int</span> carry = 1;
+<span class="k">for</span> (i = 5; i &gt;= 0; i--) {
+    <span class="k">int</span> sum = (<span class="k">unsigned char</span>)newMac[i] + carry;
+    newMac[i]  = sum &amp; 0xFF;
+    carry      = sum &gt;&gt; 8;
+    <span class="k">if</span> (carry == 0) <span class="k">break</span>;
+}
+<span class="k">if</span> (carry) memset(newMac, 0, 6);       <span class="c">// FF:FF:...:FF wrapped</span>
+
+ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
+memcpy(ifr.ifr_hwaddr.sa_data, newMac, 6);
+ioctl(sock, SIOCSIFHWADDR, &amp;ifr);</code></pre>
+
+    <p>This is a big-endian 48-bit increment done by hand: iterate from the least significant octet, propagate carry, early-exit the instant carry clears — so the common case touches exactly one byte. <code>sa_family</code> must be set to <code>ARPHRD_ETHER</code> (1) on the way in or the kernel rejects the request with <code>EINVAL</code>; the getter leaves it populated, but the code sets it explicitly anyway.</p>
+
+    <div class="note quirk">
+      <span class="meta">Sequential addresses are a fingerprint</span>
+      <p>Incrementing the last octet preserves the top 24 bits — the OUI — so the network still knows the vendor of your card, and an observer that logs <code>…:2b:c8</code> then <code>…:2b:c9</code> then <code>…:2b:ca</code> can trivially link the sessions. It also never forces bit 1 of octet 0 (the locally-administered bit) or clears bit 0 (the multicast bit); an increment that lands on an odd first octet produces a multicast address the kernel will refuse. A randomized address with <code>mac[0] = (rand() &amp; 0xFC) | 0x02</code> would be both safer and less linkable.</p>
+    </div>
+
+    <div class="note bug">
+      <span class="meta">Descriptor leak on the error path</span>
+      <p><code>setInterfaceState()</code> returns <code>-1</code> after a failed <code>SIOCSIFFLAGS</code> without calling <code>close(sock)</code>. Short-lived process, so it never matters in practice — but it is the one path in the file that forgets.</p>
+    </div>
+
+    <h3>Step 3 — bring it back up</h3>
+    <p>The same <code>setInterfaceState(iface, 1)</code>. On Wi-Fi this is where reality intrudes: taking <code>wlan0</code> down tears down the association, and on a NetworkManager system the daemon will notice the carrier flap and start its own reconnect — potentially reprogramming the MAC (NM's own <code>wifi.cloned-mac-address</code> policy) and running its internal DHCP client. The C code has no idea any of that is happening.</p>
+  </section>
+
+  <!-- ============ 05 ============ -->
+  <section id="s5" aria-labelledby="h-s5">
+    <p class="eyebrow"><b>05</b> The frame</p>
+    <h2 id="h-s5">Building outward from the middle of a 4 KB stack buffer</h2>
+
+    <p>The transmit path is written inside-out, and the ordering is load-bearing. A single <code>u_char packet[4096]</code> lives on <code>dhcp_discovery()</code>'s stack; three pointers are computed into it at fixed offsets, and each layer's writer both fills its header and grows a shared length counter.</p>
+
+    <pre><code><span class="k">static int</span> dhcp_discovery(u_int8_t *mac)
+{
+    <span class="k">int</span> len = 0;
+    u_char packet[4096];                         <span class="c">// uninitialised</span>
+
+    ip_header  = (<span class="k">struct</span> ip *)      (packet + sizeof(<span class="k">struct</span> ether_header));
+    udp_header = (<span class="k">struct</span> udphdr *)  ((<span class="k">char</span> *)ip_header  + sizeof(<span class="k">struct</span> ip));
+    dhcp       = (dhcp_t *)          ((<span class="k">char</span> *)udp_header + sizeof(<span class="k">struct</span> udphdr));
+
+    len = fill_dhcp_discovery_options(dhcp);     <span class="c">// +18  → 18</span>
+    dhcp_output(dhcp, mac, &amp;len);                <span class="c">// +240 → 258</span>
+    udp_output(udp_header, &amp;len);                <span class="c">// +8   → 266</span>
+    ip_output(ip_header, &amp;len);                  <span class="c">// +20  → 286</span>
+    ether_output(packet, mac, len);              <span class="c">// +14  → 300, inject</span>
+    <span class="k">return</span> 0;
+}</code></pre>
+
+    <p>Payload first, headers after — the same discipline a kernel uses, because every header needs the length of everything beneath it. <code>ip_output()</code> cannot fill <code>ip_len</code> until UDP has added its 8 bytes, and UDP cannot fill <code>uh_ulen</code> until the BOOTP body and its options are sized.</p>
+
+    <h3>Options are written before the header is zeroed</h3>
+    <p>Look closely at the first two calls. <code>fill_dhcp_discovery_options()</code> writes into <code>dhcp-&gt;bp_options[]</code> — a zero-length flexible array member sitting at byte 240 of the struct. Then <code>dhcp_output()</code> runs <code>memset(dhcp, 0, sizeof(dhcp_t))</code>, which clears bytes 0–239 only. The options survive because <code>sizeof(dhcp_t)</code> stops exactly where they begin. Reverse those two lines and the packet still transmits, silently, with its options intact but its BOOTP header wiped — a bug that would only show up on the wire.</p>
+
+    <h3>Each writer, in the order they run</h3>
+
+    <h4>fill_dhcp_option — the TLV primitive <span class="tag t-l7">DHCP</span></h4>
+    <pre><code><span class="k">static int</span> fill_dhcp_option(u_int8_t *packet, u_int8_t code,
+                            u_int8_t *data, u_int8_t len)
+{
+    packet[0] = code;
+    packet[1] = len;
+    memcpy(&amp;packet[2], data, len);
+    <span class="k">return</span> len + (sizeof(u_int8_t) * 2);
+}</code></pre>
+    <p>Classic tag-length-value, returning bytes consumed so the caller can advance its cursor. Four options are emitted: message type 53 = DISCOVER, requested-IP 50, parameter-request-list 55 asking for subnet mask / router / DNS / domain name, and the terminator.</p>
+
+    <h4>udp_output — the alignment nudge <span class="tag t-l4">UDP</span></h4>
+    <pre><code><span class="k">if</span> (*len &amp; 1) *len += 1;              <span class="c">// pad payload to even</span>
+*len += sizeof(<span class="k">struct</span> udphdr);
+udp_header-&gt;uh_sport = htons(68);
+udp_header-&gt;uh_dport = htons(67);
+udp_header-&gt;uh_ulen  = htons(*len);
+udp_header-&gt;uh_sum   = 0;             <span class="c">// legal on IPv4</span></code></pre>
+    <p>The odd-length pad exists because the one's-complement checksum routine consumes 16-bit words. Here it is dead code — 240 + 18 = 258 is already even — but it is the correct instinct. A zero UDP checksum is permitted over IPv4 and means "not computed"; over IPv6 it would be illegal.</p>
+
+    <h4>ip_output — a hand-rolled IPv4 header <span class="tag t-l3">IPv4</span></h4>
+    <pre><code>ip_header-&gt;ip_hl  = 5;                <span class="c">// 5 × 4 = 20 bytes, no options</span>
+ip_header-&gt;ip_v   = IPVERSION;        <span class="c">// 4</span>
+ip_header-&gt;ip_tos = 0x10;             <span class="c">// low delay</span>
+ip_header-&gt;ip_len = htons(*len);      <span class="c">// 286</span>
+ip_header-&gt;ip_id  = htons(0xffff);    <span class="c">// constant — a fingerprint</span>
+ip_header-&gt;ip_off = 0;
+ip_header-&gt;ip_ttl = 16;
+ip_header-&gt;ip_p   = IPPROTO_UDP;
+ip_header-&gt;ip_sum = 0;
+ip_header-&gt;ip_src.s_addr = 0;             <span class="c">// 0.0.0.0, we have no lease</span>
+ip_header-&gt;ip_dst.s_addr = 0xFFFFFFFF;    <span class="c">// 255.255.255.255</span>
+ip_header-&gt;ip_sum = in_cksum((<span class="k">unsigned short</span> *)ip_header, sizeof(<span class="k">struct</span> ip));</code></pre>
+    <p>Source 0.0.0.0 is mandatory here and is precisely why this cannot go through a normal socket: the host has no address yet, so it identifies itself only by the <code>chaddr</code> field inside the DHCP body. Note the checksum field is zeroed <em>before</em> being summed — required, since the checksum covers itself.</p>
+    <p><code>in_cksum()</code> is the FreeBSD one's-complement routine, verbatim: accumulate 16-bit words into a 32-bit sum, fold the carries down twice, invert. For this header the result is <code>0xA9C0</code>.</p>
+
+    <h4>ether_output — and out <span class="tag t-l2">L2</span></h4>
+    <pre><code>memcpy(eframe-&gt;ether_shost, mac, ETHER_ADDR_LEN);
+memset(eframe-&gt;ether_dhost, -1,  ETHER_ADDR_LEN);   <span class="c">// ff:ff:ff:ff:ff:ff</span>
+eframe-&gt;ether_type = htons(ETHERTYPE_IP);
+len += sizeof(<span class="k">struct</span> ether_header);
+result = pcap_inject(pcap_handle, frame, len);</code></pre>
+    <p><code>memset(dst, -1, 6)</code> is the idiomatic way to write the broadcast address: <code>-1</code> truncated to <code>unsigned char</code> is <code>0xFF</code>. <code>pcap_inject()</code> hands the finished 300 bytes straight to the driver's transmit queue — no routing lookup, no ARP, no kernel checksum offload. Whatever is in the buffer is what leaves the machine.</p>
+  </section>
+
+  <!-- ============ 06 ============ -->
+  <section id="s6" aria-labelledby="h-s6">
+    <p class="eyebrow"><b>06</b> Byte layout</p>
+    <h2 id="h-s6">Where every field lands in the 300-byte frame</h2>
+
+    <p>The BOOTP fixed header is 236 bytes, followed by the 4-byte magic cookie, followed by variable options — which puts <code>bp_options[0]</code> at offset 240 within the DHCP body, exactly as RFC 2131 requires. The struct in <code>dhcpClient.c</code> reproduces that layout with no padding because every member is naturally aligned.</p>
+
+    <figure>
+      <div class="scroller">
+        <svg viewBox="0 0 860 190" width="860" height="190" role="img" aria-label="Encapsulation diagram of the 300-byte frame">
+          <g font-size="10.5" fill="var(--text-3)" letter-spacing="1.2">
+            <text x="4" y="16">OFFSET</text>
+            <text x="4" y="150">CUMULATIVE</text>
+          </g>
+          <g stroke-width="1" fill="var(--surface)">
+            <rect x="4" y="34" width="70" height="58" rx="3" stroke="var(--l2)"/>
+            <rect x="74" y="34" width="98" height="58" rx="3" stroke="var(--l3)"/>
+            <rect x="172" y="34" width="52" height="58" rx="3" stroke="var(--l4)"/>
+            <rect x="224" y="34" width="540" height="58" rx="3" stroke="var(--l7)"/>
+            <rect x="764" y="34" width="92" height="58" rx="3" stroke="var(--accent)"/>
+          </g>
+          <g font-size="12" fill="var(--text)">
+            <text x="16" y="60">ETH</text><text x="86" y="60">IPv4</text>
+            <text x="180" y="60">UDP</text><text x="236" y="60">BOOTP / DHCP fixed header</text>
+            <text x="776" y="60">OPTIONS</text>
+          </g>
+          <g font-size="10.5" fill="var(--text-3)">
+            <text x="16" y="78">14 B</text><text x="86" y="78">20 B</text>
+            <text x="180" y="78">8 B</text><text x="236" y="78">236 B + 4 B magic cookie 63 82 53 63</text>
+            <text x="776" y="78">18 B</text>
+          </g>
+          <g font-size="10.5" fill="var(--text-3)">
+            <text x="4" y="112">0x000</text><text x="74" y="112">0x00E</text><text x="172" y="112">0x022</text>
+            <text x="224" y="112">0x02A</text><text x="762" y="112">0x11A</text><text x="816" y="112">0x12C</text>
+          </g>
+          <g stroke="var(--line)" stroke-width="1">
+            <path d="M4 120 L4 130 M856 120 L856 130 M4 125 L856 125"/>
+          </g>
+          <text x="400" y="145" font-size="11" fill="var(--text)">300 bytes total · below the 1518 B MTU, above the 60 B minimum — no padding needed</text>
+        </svg>
+      </div>
+      <figcaption>Layer colours are reused in the hexdump below: <span class="tag t-l2">ETH</span> <span class="tag t-l3">IPv4</span> <span class="tag t-l4">UDP</span> <span class="tag t-l7">DHCP</span>.</figcaption>
+    </figure>
+
+    <h3>DHCP fixed header, field by field</h3>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Off</th><th>Size</th><th>Field</th><th>Value sent</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0</td><td class="num">1</td><td>opcode</td><td>0x01</td><td class="desc">BOOTREQUEST. Replies carry 0x02.</td></tr>
+          <tr><td class="num">1</td><td class="num">1</td><td>htype</td><td>0x01</td><td class="desc">10 Mb Ethernet — the ARP hardware type, still 1 on 10-gig.</td></tr>
+          <tr><td class="num">2</td><td class="num">1</td><td>hlen</td><td>0x06</td><td class="desc">Hardware address length in bytes.</td></tr>
+          <tr><td class="num">3</td><td class="num">1</td><td>hops</td><td>0x00</td><td class="desc">Incremented by relay agents.</td></tr>
+          <tr><td class="num">4</td><td class="num">4</td><td>xid</td><td>0x00000000</td><td class="desc">Transaction ID. Should be random; here it is left zero by the <code>memset</code>.</td></tr>
+          <tr><td class="num">8</td><td class="num">2</td><td>secs</td><td>0x0000</td><td class="desc">Seconds since the client began acquiring.</td></tr>
+          <tr><td class="num">10</td><td class="num">2</td><td>flags</td><td>0x0000</td><td class="desc">Broadcast bit clear — the server may unicast its OFFER.</td></tr>
+          <tr><td class="num">12</td><td class="num">4</td><td>ciaddr</td><td>0.0.0.0</td><td class="desc">Client address, only set when already bound.</td></tr>
+          <tr><td class="num">16</td><td class="num">4</td><td>yiaddr</td><td>0.0.0.0</td><td class="desc">"Your" address — the field the server fills in, and the only one this program reads back.</td></tr>
+          <tr><td class="num">20</td><td class="num">4</td><td>siaddr</td><td>0.0.0.0</td><td class="desc">Next-server address for netboot.</td></tr>
+          <tr><td class="num">24</td><td class="num">4</td><td>giaddr</td><td>0.0.0.0</td><td class="desc">Relay agent address.</td></tr>
+          <tr><td class="num">28</td><td class="num">16</td><td>chaddr</td><td>MAC + 10 B</td><td class="desc">Client hardware address, padded to 16. This is the identity the DHCP server keys its lease on — the whole point of step 04.</td></tr>
+          <tr><td class="num">44</td><td class="num">64</td><td>bp_sname</td><td>zeros</td><td class="desc">Optional server hostname.</td></tr>
+          <tr><td class="num">108</td><td class="num">128</td><td>bp_file</td><td>zeros</td><td class="desc">Boot file name.</td></tr>
+          <tr><td class="num">236</td><td class="num">4</td><td>magic_cookie</td><td>63 82 53 63</td><td class="desc">Marks this BOOTP packet as carrying DHCP options. Written with <code>htonl()</code>.</td></tr>
+          <tr><td class="num">240</td><td class="num">18</td><td>bp_options[]</td><td>TLV stream</td><td class="desc">Flexible array member, <code>[0]</code>-sized so it contributes nothing to <code>sizeof</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The options stream</h3>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Bytes</th><th>Code</th><th>Option</th><th>Payload</th></tr></thead>
+        <tbody>
+          <tr><td>35 01 01</td><td class="num">53</td><td>DHCP message type</td><td class="desc">1 = DISCOVER</td></tr>
+          <tr><td>32 04 c0 a8 01 0a</td><td class="num">50</td><td>Requested IP</td><td class="desc">192.168.1.10 — hardcoded as <code>htonl(0xc0a8010a)</code></td></tr>
+          <tr><td>37 04 01 03 06 0f</td><td class="num">55</td><td>Parameter request list</td><td class="desc">subnet mask, router, DNS, domain name</td></tr>
+          <tr><td>ff 01 00</td><td class="num">255</td><td>End</td><td class="desc">Should be the single byte <code>0xFF</code>; emitted here as a 3-byte TLV</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note quirk">
+      <span class="meta">Two spec deviations in three bytes</span>
+      <p>Option 255 is a bare terminator with no length or value field — RFC 2132 is explicit. Sending <code>ff 01 00</code> works because every parser stops at the <code>0xFF</code> and ignores the trailing bytes as padding, but it is wrong. And requesting 192.168.1.10 on every network is at best ignored and at worst an unsolicited claim on someone else's address; a real client either omits option 50 in DISCOVER or asks for its previous lease.</p>
+    </div>
+  </section>
+
+  <!-- ============ 07 ============ -->
+  <section id="s7" aria-labelledby="h-s7">
+    <p class="eyebrow"><b>07</b> Hexdump</p>
+    <h2 id="h-s7">The exact bytes that leave the NIC</h2>
+
+    <p>Assembled for <code>wlan0</code> with a post-rotation address of <code>3c:22:fb:1a:2b:c9</code>. Every value here is what the code above produces — including the IPv4 checksum, computed over the ten header words as <code>0xA9C0</code>.</p>
+
+    <div class="hex">
+      <table>
+        <tbody>
+          <tr><td class="off">0x0000</td><td class="by"><span class="b2">ff ff ff ff ff ff  3c 22 fb 1a 2b c9  08 00</span> <span class="b3">45 10</span></td><td class="an">dst broadcast · src new MAC · type 0x0800</td></tr>
+          <tr><td class="off">0x0010</td><td class="by"><span class="b3">01 1e ff ff 00 00 10 11 a9 c0 00 00 00 00 ff ff</span></td><td class="an">len 286 · id 0xffff · ttl 16 · proto 17 · cksum</td></tr>
+          <tr><td class="off">0x0020</td><td class="by"><span class="b3">ff ff</span> <span class="b4">00 44 00 43 01 0a 00 00</span> <span class="b7">01 01 06 00</span></td><td class="an">255.255.255.255 · 68→67 · ulen 266 · sum 0</td></tr>
+          <tr><td class="off">0x0030</td><td class="by"><span class="b7">00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00</span></td><td class="an">xid 0 · secs 0 · flags 0 · ciaddr · yiaddr</td></tr>
+          <tr><td class="off">0x0040</td><td class="by"><span class="b7">00 00 00 00 00 00 00 00</span> <span class="b7">3c 22 fb 1a 2b c9</span> <span class="bad">?? ??</span></td><td class="an">siaddr · giaddr · chaddr[0..5] · <span class="bad">out-of-bounds</span></td></tr>
+          <tr><td class="off">0x0050</td><td class="by"><span class="bad">?? ?? ?? ?? ?? ?? ?? ??</span> <span class="b7">00 00 00 00 00 00 00 00</span></td><td class="an">stack bytes read past <code>mac[6]</code> · sname begins</td></tr>
+          <tr><td class="off">0x0060</td><td class="by"><span class="b7">…  zeros through bp_sname and bp_file  …</span></td><td class="an">192 bytes of zeros</td></tr>
+          <tr><td class="off">0x0116</td><td class="by"><span class="b7">63 82 53 63</span></td><td class="an">DHCP magic cookie</td></tr>
+          <tr><td class="off">0x011a</td><td class="by"><span class="b7">35 01 01  32 04 c0 a8 01 0a  37 04 01 03 06 0f</span></td><td class="an">opt 53 DISCOVER · opt 50 · opt 55</td></tr>
+          <tr><td class="off">0x0129</td><td class="by"><span class="b7">ff 01 00</span></td><td class="an">opt 255 end (over-long) · frame ends at 0x012c</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note bug">
+      <span class="meta">Ten bytes of your stack, broadcast to the LAN</span>
+      <p><code>dhcp_output()</code> does <code>memcpy(dhcp-&gt;chaddr, mac, DHCP_CHADDR_LEN)</code> — 16 bytes copied out of a <code>u_int8_t mac[6]</code> that lives on <code>dhcpClientRenew()</code>'s frame. Ten bytes past the end of the array are read and transmitted at offset 0x46. On the destination side the bytes are harmless: <code>hlen = 6</code> tells the server to ignore everything past the sixth. On the source side it is an out-of-bounds read and a stack-memory disclosure to every host in the broadcast domain, and exactly the kind of thing ASAN flags on the first run. The fix is one constant: copy <code>6</code>, and let the surrounding <code>memset</code> supply the padding.</p>
+    </div>
+  </section>
+
+  <!-- ============ 08 ============ -->
+  <section id="s8" aria-labelledby="h-s8">
+    <p class="eyebrow"><b>08</b> Receive path</p>
+    <h2 id="h-s8">A callback chain that re-implements the protocol stack in four functions</h2>
+
+    <p>After injection the program blocks in <code>pcap_loop(pcap_handle, -1, ether_input, NULL)</code> — capture forever, calling <code>ether_input</code> per frame. Each handler does a single check and casts one header deeper.</p>
+
+    <pre><code>ether_input()  <span class="c">// eframe-&gt;ether_type == ETHERTYPE_IP ?</span>
+   └─ ip_input()     <span class="c">// ip_p == IPPROTO_UDP ?</span>
+        └─ udp_input()    <span class="c">// ntohs(uh_sport) == 67 ?</span>
+             └─ dhcp_input()   <span class="c">// opcode == 2 ? → ip = ntohl(yiaddr); pcap_breakloop()</span></code></pre>
+
+    <p>Every step advances by <code>sizeof</code> of the header it just validated. That is fine for this program — the injected DISCOVER guarantees a fixed-shape reply — but it is the shortcut that turns a parser into a vulnerability in the general case: <code>ip_input</code> assumes a 20-byte IPv4 header rather than reading <code>ip_hl</code>, so a reply carrying IP options would land the UDP pointer inside the option block.</p>
+
+    <div class="note quirk">
+      <span class="meta">Correct by coincidence, twice</span>
+      <p><code>dhcp_input()</code> tests <code>dhcp-&gt;opcode != DHCP_OPTION_OFFER</code>. That constant is 2 — but it belongs to the <em>option 53 message-type</em> namespace, while <code>opcode</code> holds a BOOTP operation code. The comparison only works because <code>DHCP_BOOTREPLY</code> also happens to equal 2. Separately, <code>ether_input()</code> writes <code>htons(eframe-&gt;ether_type) == ETHERTYPE_IP</code> where it means <code>ntohs</code>; on any little-endian host the two are the identical byte swap, so it passes. Both would break the moment the code is ported or the constants are renumbered.</p>
+    </div>
+
+    <div class="note bug">
+      <span class="meta">No filter, no timeout, no transaction matching</span>
+      <p>Three omissions compound here. There is no <code>pcap_setfilter()</code>, so every frame on the segment is copied to userspace and — at the default <code>VERBOSE_LEVEL_DEBUG</code> — hexdumped to stdout, which on a busy Wi-Fi network is thousands of lines before the OFFER arrives. There is no <code>xid</code> check, so a DHCP reply meant for a different client on the same segment is accepted as ours. And <code>pcap_loop(-1)</code> has no timeout: on a network with no DHCP server the process blocks forever, taking the GUI's worker thread and <code>process.communicate()</code> with it. A BPF program of <code>udp and src port 67</code> plus an alarm or a bounded packet count would fix all three.</p>
+    </div>
+
+    <h3>The handshake that isn't</h3>
+    <p>DHCP is a four-message exchange: DISCOVER → OFFER → REQUEST → ACK. This client sends the first and reads the second, then closes the pcap handle and returns. It never sends the REQUEST that formally claims the offered address, and never waits for the ACK that binds the lease. So the line it prints —</p>
+    <pre><code>printf(<span class="s">"Got IP %u.%u.%u.%u\n"</span>, ip &gt;&gt; 24, (ip &lt;&lt; 8) &gt;&gt; 24, (ip &lt;&lt; 16) &gt;&gt; 24, (ip &lt;&lt; 24) &gt;&gt; 24);</code></pre>
+    <p>reports an address that was <em>offered</em>, not one the machine holds. The address the interface actually ends up with comes from the system's own DHCP client (dhcpcd, NetworkManager, systemd-networkd) reacting to the link coming back up with a new MAC. PrivIP's real contribution to the IP change is step 04; the injected frame is a probe, and an excellent one to learn from, but the lease is somebody else's work.</p>
+
+    <p>Those bit shifts, incidentally, are correct only because <code>ip</code> was passed through <code>ntohl()</code> on receipt — it holds host-order, so the most significant byte is the first octet.</p>
+  </section>
+
+  <!-- ============ 09 ============ -->
+  <section id="s9" aria-labelledby="h-s9">
+    <p class="eyebrow"><b>09</b> Capabilities</p>
+    <h2 id="h-s9">Why this runs without sudo, and what it still can't do</h2>
+
+    <p>Both halves of the binary need privilege: <code>SIOCSIFHWADDR</code> and <code>SIOCSIFFLAGS</code> require <code>CAP_NET_ADMIN</code>, and opening a packet socket for injection requires <code>CAP_NET_RAW</code>. Rather than setuid-root, the installer attaches file capabilities:</p>
+
+    <pre><code>sudo setcap 'cap_net_raw,cap_net_admin+ep' bin/privipchanger</code></pre>
+
+    <p>The <code>+ep</code> suffix places both capabilities in the file's <em>effective</em> and <em>permitted</em> sets, so at <code>execve</code> the kernel grants exactly those two and nothing else — no root uid, no <code>CAP_SYS_ADMIN</code>, no ability to read <code>/etc/shadow</code>. The GUI can then <code>Popen()</code> it as a normal user and the child comes up privileged for precisely the two operations it needs.</p>
+
+    <div class="note quirk">
+      <span class="meta">Capabilities are attached to an inode, not a path</span>
+      <p><code>make</code> writes a new file, and the new file has no xattrs. Every rebuild silently strips the capability set, and the next run fails with <code>SIOCSIFHWADDR: Operation not permitted</code> from <code>perror</code>. Re-run the <code>setcap</code> line after any build — or add it as a Makefile recipe step, which is the durable fix. The same applies to copying the binary, moving it across filesystems, or unpacking it from an archive.</p>
+    </div>
+
+    <div class="note quirk">
+      <span class="meta">Capabilities do not survive a Python re-exec</span>
+      <p>File caps are granted at <code>execve</code> of <em>that file</em>. The Python interpreter running <code>dashboard.py</code> has none; it only ever gains privilege in the child process it spawns. That is the right shape — the GUI stays unprivileged and the blast radius is one short-lived binary.</p>
+    </div>
+  </section>
+
+  <!-- ============ 10 ============ -->
+  <section id="s10" aria-labelledby="h-s10">
+    <p class="eyebrow"><b>10</b> Python layer</p>
+    <h2 id="h-s10">A dashboard that reads sysfs, and a watchdog that polls the process table</h2>
+
+    <h3>dashboard.py — reading state without asking the binary</h3>
+    <p>The GUI never parses the C program's output for state. It re-reads the truth from the kernel every five seconds via <code>self.after(5000, …)</code>, Tk's event-loop timer — no thread, no blocking:</p>
+    <pre><code><span class="k">with</span> open(<span class="s">f"/sys/class/net/{iface}/address"</span>) <span class="k">as</span> f:
+    mac = f.read().strip().upper()
+
+cmd = <span class="s">f"ip -4 addr show {iface} | grep -oP '(?&lt;=inet\\s)\\d+(\\.\\d+){{3}}' | head -n 1"</span>
+res = subprocess.run(cmd, shell=<span class="k">True</span>, capture_output=<span class="k">True</span>, text=<span class="k">True</span>)</code></pre>
+    <p>The MAC read is exact — <code>/sys/class/net/*/address</code> is the kernel's own view, updated the instant the <code>ioctl</code> lands. The IP read shells out to <code>ip</code> and scrapes it with a PCRE lookbehind. The interface list comes from <code>os.listdir('/sys/class/net/')</code>, which is why the dropdown shows <code>lo</code> and any <code>docker0</code> alongside your real NIC.</p>
+
+    <div class="note quirk">
+      <span class="meta">shell=True on a value that comes from sysfs</span>
+      <p>The interface name is interpolated into a shell string. It originates from a directory listing of <code>/sys/class/net/</code>, so in practice it cannot contain a metacharacter — but the safe form costs nothing: <code>subprocess.run(["ip","-4","addr","show",iface])</code> and parse in Python, or skip the subprocess entirely and read <code>/proc/net/fib_trie</code>. The same applies to the bare <code>except:</code> clauses around both reads, which will swallow a <code>KeyboardInterrupt</code>.</p>
+    </div>
+
+    <p>Running the binary is dispatched to a <code>threading.Thread</code> so the Tk main loop keeps painting, with <code>Popen(...).communicate()</code> collecting both streams. That is the one place the two languages meet: <code>argv[1]</code> in, captured text out, appended to the log box.</p>
+
+    <h3>The systemd unit is generated at runtime</h3>
+    <p>Toggling the switch writes a user unit to <code>~/.config/systemd/user/privip-monitor.service</code> and drives <code>systemctl --user</code> through three subprocess calls — <code>daemon-reload</code>, <code>enable</code>, <code>start</code>:</p>
+    <pre><code>[Unit]
+Description=PrivIP Firefox Watchdog
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /path/to/src/monitor.py
+Restart=always
+
+[Install]
+WantedBy=default.target</code></pre>
+
+    <div class="note bug">
+      <span class="meta">The unit runs the system interpreter, not the venv</span>
+      <p><code>ExecStart</code> is hardcoded to <code>/usr/bin/python3</code>, while <code>psutil</code> was installed into <code>.venv</code> by the installer. Unless psutil also happens to be present system-wide, the service dies on <code>ImportError</code> at import time — and because <code>Restart=always</code> has no <code>RestartSec</code>, systemd restarts it in a tight loop until the rate limiter trips. The GUI's <code>check_service_status()</code> reports it as inactive with no explanation. Point <code>ExecStart</code> at <code>{base_dir}/.venv/bin/python</code> and the whole class of failure disappears.</p>
+    </div>
+
+    <h3>monitor.py — edge detection on a 3-second poll</h3>
+    <pre><code>firefox_was_running = <span class="k">False</span>
+
+<span class="k">while True</span>:
+    config = get_config()
+    <span class="k">if</span> config.get(<span class="s">"auto_firefox"</span>, <span class="k">False</span>):
+        firefox_now = any(<span class="s">"firefox"</span> <span class="k">in</span> p.name().lower()
+                          <span class="k">for</span> p <span class="k">in</span> psutil.process_iter([<span class="s">'name'</span>]))
+        <span class="k">if</span> firefox_now <span class="k">and not</span> firefox_was_running:
+            subprocess.run([BINARY, config.get(<span class="s">"interface"</span>, <span class="s">"wlan0"</span>)])
+        firefox_was_running = firefox_now
+    time.sleep(3)</code></pre>
+
+    <p>This is a rising-edge detector, and the pattern is right: fire on the <code>False → True</code> transition, not on the level, or the identity would rotate every three seconds for as long as the browser is open. <code>psutil.process_iter(['name'])</code> walks <code>/proc</code> and caches only the name field, so the sweep is cheap. Re-reading the JSON config each iteration means the GUI's switch takes effect without restarting the service.</p>
+
+    <div class="note quirk">
+      <span class="meta">Rotating the network out from under the browser</span>
+      <p>The trigger fires when Firefox <em>starts</em>, and <code>subprocess.run()</code> then takes the interface down for the duration of the C binary — several seconds, plus however long the OS DHCP client needs to re-lease. Firefox is by then already resolving its homepage. The first page load after an auto-rotation frequently fails. Firing on the edge and then waiting for the link to settle before returning would be the honest behaviour; a small <code>sleep</code> after the binary exits is the one-line version. The substring match is also broad — <code>firefox-esr</code>, <code>firefoxdeveloperedition</code>, and any process with "firefox" in its name all count.</p>
+    </div>
+  </section>
+
+  <!-- ============ 11 ============ -->
+  <section id="s11" aria-labelledby="h-s11">
+    <p class="eyebrow"><b>11</b> Build system</p>
+    <h2 id="h-s11">Pattern rules and compiler-generated dependencies</h2>
+
+    <pre><code>CFLAGS  := -Wall -Wextra -O3 -I$(INC_DIR) -MMD
+LDFLAGS := -lpcap
+
+SRCS := $(wildcard $(CORE_DIR)/*.c)
+OBJS := $(patsubst $(CORE_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
+DEPS := $(OBJS:.o=.d)
+
+$(BUILD_DIR)/%.o: $(CORE_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	@$(CC) $(CFLAGS) -c $&lt; -o $@
+
+-include $(DEPS)</code></pre>
+
+    <p>Three things here are worth copying into other projects. <code>$(wildcard)</code> plus <code>$(patsubst)</code> means adding a <code>.c</code> file to <code>core/</code> requires no Makefile edit. <code>-MMD</code> makes GCC emit a <code>.d</code> file listing every header the translation unit included, and <code>-include $(DEPS)</code> folds those rules back in — so editing <code>include/dhcpClient.h</code> correctly rebuilds only the objects that included it. The leading <code>-</code> makes the include non-fatal on a clean tree where no <code>.d</code> files exist yet.</p>
+
+    <div class="note quirk">
+      <span class="meta">-Wall -Wextra is on, and the build is not clean</span>
+      <p>Two of the warnings the flags produce point at real defects. <code>dhcpClientRenew()</code> jumps to its <code>done:</code> label with <code>result</code> holding the DISCOVER return code, so a successful run returns 0 through a path labelled as failure handling. And <code>ether_input()</code> takes <code>u_char *args</code> — required by the <code>pcap_handler</code> signature — which <code>-Wextra</code> flags as unused. The <code>@</code> prefix on every recipe line hides the compiler invocation, so those warnings scroll past under a tidy "Compiled:" line. Dropping the <code>@</code> during development is worth the noise.</p>
+    </div>
+
+    <p>One structural note: <code>make clean</code> removes <code>build/</code> and the binary but the repository ships both <code>build/*.o</code> and <code>bin/*</code> committed. Prebuilt objects in version control will not match a different libc or GCC version, and — per section 09 — the committed binary carries no capabilities. Build from source.</p>
+  </section>
+
+  <!-- ============ 12 ============ -->
+  <section id="s12" aria-labelledby="h-s12">
+    <p class="eyebrow"><b>12</b> Sharp edges</p>
+    <h2 id="h-s12">Everything above, ranked by what actually bites</h2>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Severity</th><th>Where</th><th>Issue</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td class="sev sev--high">HIGH</td><td>dhcpClient.c · dhcp_output</td><td class="desc">16-byte <code>memcpy</code> from a 6-byte array — OOB read, stack bytes broadcast to the LAN.</td><td class="desc">Copy 6; the <code>memset</code> already zeroed the padding.</td></tr>
+          <tr><td class="sev sev--high">HIGH</td><td>dhcpClient.c · pcap_loop</td><td class="desc">Unbounded blocking wait with no filter and no <code>xid</code> match — hangs forever if no server replies.</td><td class="desc">BPF filter <code>udp and src port 67</code>, bounded count, and an <code>alarm()</code> or <code>to_ms</code>-driven timeout.</td></tr>
+          <tr><td class="sev sev--high">HIGH</td><td>dashboard.py · install_service</td><td class="desc"><code>ExecStart</code> uses the system interpreter; the watchdog cannot import psutil.</td><td class="desc">Use <code>.venv/bin/python</code>; add <code>RestartSec=5</code>.</td></tr>
+          <tr><td class="sev sev--med">MED</td><td>main.c</td><td class="desc">Failure of <code>changeMac()</code> is discarded; the program reports success regardless.</td><td class="desc">Propagate the return code and exit non-zero.</td></tr>
+          <tr><td class="sev sev--med">MED</td><td>interfaceManager.c</td><td class="desc">Sequential MAC increment keeps the OUI and links sessions; never sets the locally-administered bit.</td><td class="desc">Randomize 46 bits; force <code>mac[0] = (r &amp; 0xFC) | 0x02</code>.</td></tr>
+          <tr><td class="sev sev--med">MED</td><td>dhcpClient.c · get_mac_address</td><td class="desc">Unbounded <code>strcpy</code> into <code>ifr_name[16]</code>; <code>socket()</code> return value never checked.</td><td class="desc"><code>strncpy</code> with explicit NUL; test the fd.</td></tr>
+          <tr><td class="sev sev--med">MED</td><td>dhcpClient.c · fill_dhcp_discovery_options</td><td class="desc">Requested-IP hardcoded to 192.168.1.10 on every network.</td><td class="desc">Omit option 50, or supply the previous lease.</td></tr>
+          <tr><td class="sev sev--med">MED</td><td>monitor.py</td><td class="desc">Rotation fires as Firefox starts, killing the link mid-load.</td><td class="desc">Settle delay after the binary returns.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>dhcpClient.c · ip_input</td><td class="desc">Assumes a 20-byte IPv4 header instead of honouring <code>ip_hl</code>.</td><td class="desc"><code>ip_hl * 4</code>.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>dhcpClient.c</td><td class="desc"><code>DHCP_OPTION_OFFER</code> compared against a BOOTP opcode; <code>htons</code> used where <code>ntohs</code> is meant. Both correct by accident.</td><td class="desc">Use <code>DHCP_BOOTREPLY</code> and <code>ntohs</code>.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>dhcpClient.c</td><td class="desc">Default verbosity is <code>DEBUG</code>: every captured frame is hexdumped to stdout.</td><td class="desc">Default to <code>INFO</code>; expose <code>-v</code>.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>interfaceManager.c</td><td class="desc">Socket leaked when <code>SIOCSIFFLAGS</code> fails; <code>"MAC is changed"</code> printed without a newline.</td><td class="desc"><code>close(sock)</code> on the error path.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>install.sh</td><td class="desc">Uses <code>apt</code> although the README recommends Arch; <code>chmod +x ../cprivip.sh</code> points outside the repo.</td><td class="desc">Detect the package manager; fix the relative path.</td></tr>
+          <tr><td class="sev sev--low">LOW</td><td>Makefile</td><td class="desc"><code>setcap</code> is not re-applied after a rebuild.</td><td class="desc">Add a <code>setcap</code> target and make <code>all</code> depend on it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What a network operator sees</h3>
+    <p>Worth stating plainly, since the tool's stated purpose is privacy. The DISCOVER this program emits is highly distinctive: <code>xid = 0</code>, <code>ip_id = 0xffff</code>, <code>ttl = 16</code>, <code>tos = 0x10</code>, a 3-byte end option, a fixed requested-IP of 192.168.1.10, and no client-identifier or hostname option at all. Any DHCP server with logging, or any IDS with a fingerprint database, can pick these packets out of normal traffic immediately — and correlate them with the sequential MAC addresses from section 04. As a privacy mechanism the MAC rotation is real but weakly implemented; as a demonstration of raw packet construction the code is a good, compact read.</p>
+  </section>
+
+  <!-- ============ 13 ============ -->
+  <section id="s13" aria-labelledby="h-s13">
+    <p class="eyebrow"><b>13</b> Running it</p>
+    <h2 id="h-s13">Build, grant, launch</h2>
+
+    <pre><code><span class="c"># dependencies (Debian/Ubuntu; on Arch: pacman -S base-devel libpcap tk)</span>
+sudo apt install build-essential libpcap-dev python3-venv python3-tk
+
+<span class="c"># build the C engine → bin/privipchanger</span>
+make
+
+<span class="c"># grant the two capabilities — repeat after every rebuild</span>
+sudo setcap 'cap_net_raw,cap_net_admin+ep' bin/privipchanger
+
+<span class="c"># python side</span>
+python3 -m venv .venv &amp;&amp; .venv/bin/pip install -r requirements.txt</code></pre>
+
+    <div class="grid">
+      <div class="card"><h4>GUI</h4><p><code>./cprivip.sh</code> — activates the venv and launches the dashboard. Live MAC/IP readout, interface picker, manual rotate, watchdog toggle, log pane.</p></div>
+      <div class="card"><h4>CLI</h4><p><code>./bin/privipchanger wlan0</code> — one rotation, verbose. Add <code>| head -40</code> unless you want every frame on the segment hexdumped.</p></div>
+      <div class="card"><h4>Service</h4><p><code>systemctl --user status privip-monitor</code> and <code>journalctl --user -u privip-monitor -f</code>.</p></div>
+      <div class="card"><h4>Verify</h4><p><code>ip link show wlan0</code> for the MAC, <code>ip -4 addr show wlan0</code> for the lease. Confirm both changed — the binary's own success message does not prove it.</p></div>
+    </div>
+
+    <div class="note quirk">
+      <span class="meta">Expect NetworkManager to argue</span>
+      <p>On a managed system, taking the interface down and back up hands control to NetworkManager, which may apply its own <code>wifi.cloned-mac-address</code> policy and overwrite what you just set. If the MAC reverts within a second of the rotation, that is why — set <code>wifi.cloned-mac-address=permanent</code> for the connection, or unmanage the device, before concluding the ioctl failed.</p>
+    </div>
+
+    <p class="note-rule">Use this on networks you own or are authorized to test. Rotating a hardware address to defeat a captive portal's usage accounting is, in most jurisdictions, a terms-of-service violation at minimum.</p>
+  </section>
+
+  </main>
+</div>
+</div>
+
+<div class="wrap">
+  <p class="colophon">C engine derived in part from Samuel Jacob's Simple DHCP Client (BSD). MAC rotation, GUI,
+    watchdog and build system are original. The field offsets and the hexdump in section 07 were derived
+    from the source in this repository.</p>
+  <footer class="sitefoot">
+    <p>© 2026 Tello Pérez Garrote</p>
+    <nav class="foot-nav" aria-label="Elsewhere">
+      <a href="https://github.com/Tello-P">GitHub</a>
+      <a href="https://www.linkedin.com/in/tello-p%C3%A9rez-garrote-028292257">LinkedIn</a>
+      <a href="mailto:perezgarrote.tello@gmail.com">Email</a>
+    </nav>
+  </footer>
+</div>
+
+</body>
+</html>
